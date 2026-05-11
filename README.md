@@ -100,9 +100,24 @@ After seeding:
 - **Extensible tool system** — web search, sandboxed code execution
 - **Monitoring** — Prometheus metrics, Sentry error tracking
 
-## Environment Variables
+## Screenshots
 
-Key configuration via `.env`:
+| | |
+|---|---|
+| ![Login](screenshots/login.png) | ![Chat](screenshots/chat.png) |
+| **Login** | **AI Chat Consultation** |
+| ![Consultations](screenshots/consultations.png) | ![Knowledge Base](screenshots/knowledge.png) |
+| **Consultation Review** | **Knowledge Base** |
+| ![Profile](screenshots/profile.png) | ![Tools](screenshots/tools.png) |
+| **User Profile** | **Tool Management** |
+| ![MCP](screenshots/mcp.png) | ![Models](screenshots/models.png) |
+| **MCP Server Config** | **Model Settings** |
+| ![Settings](screenshots/settings.png) | ![Users](screenshots/users.png) |
+| **System Settings** | **User Management** |
+| ![Permissions](screenshots/permissions.png) | ![Skills](screenshots/skills.png) |
+| **Permission Management** | **Skill Management** |
+
+## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
