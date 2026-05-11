@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.egg
+.pytest_cache/
+*.tsbuildinfo
+
+# Node
+node_modules/
+dist/
+.next/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project
+backend/alembic/versions/*.pyc
+*.log
+
+# AI conversation logs (contains sensitive session data)
+backend/*.txt
+!backend/requirements.txt
+
+# Raw legal documents (potential copyright)
+backend/data/
+
+# Build & cache artifacts
+backend/.pytest_cache/
+backend/.vite/
+backend/.claude/
+backend/=*
+frontend/.vite/

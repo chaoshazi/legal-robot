@@ -1,0 +1,17 @@
+{
+  "skills": [
+    ".claude/skills/api",
+    ".claude/skills/chat-debug",
+    ".claude/skills/consultation",
+    ".claude/skills/dev",
+    ".claude/skills/frontend",
+    ".claude/skills/ingest",
+    ".claude/skills/migrate",
+    ".claude/skills/monitoring",
+    ".claude/skills/qa-workflow",
+    ".claude/skills/rag",
+    ".claude/skills/security",
+    ".claude/skills/seed",
+    ".claude/skills/test"
+  ]
+}
