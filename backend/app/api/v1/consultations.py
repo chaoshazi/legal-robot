@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_role
 from app.core.database import get_db
 from app.models.consultation import Consultation
+from app.models.message import Message
 from app.models.user import User
 from app.schemas.common import ApiResponse
 from pydantic import BaseModel
@@ -82,6 +83,19 @@ async def review_consultation(
     if req.action == "publish":
         consultation.status = "published"
         consultation.final_answer = req.final_answer or consultation.draft_answer
+        # Sync the chat message so the user sees the lawyer's edited answer
+        msg_result = await db.execute(
+            select(Message)
+            .where(
+                Message.session_id == consultation.session_id,
+                Message.role == "assistant",
+            )
+            .order_by(Message.created_at.desc())
+            .limit(1)
+        )
+        assistant_msg = msg_result.scalar_one_or_none()
+        if assistant_msg:
+            assistant_msg.content = consultation.final_answer
     elif req.action == "reject":
         consultation.status = "rejected"
     else:

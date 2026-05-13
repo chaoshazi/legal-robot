@@ -99,7 +99,7 @@ export function MainLayout() {
       <Sider width={240} theme="light" style={{ borderRight: "1px solid #f0f0f0" }}>
         <div style={{ padding: "20px 24px", borderBottom: "1px solid #f0f0f0" }}>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            Legal Consult
+            AI法律咨询系统
           </Typography.Title>
         </div>
         <Menu

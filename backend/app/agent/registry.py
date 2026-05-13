@@ -130,20 +130,22 @@ class ToolRegistry:
         active_tool_ids: list[str] | None = None,
         active_mcp_ids: list[str] | None = None,
         knowledge_enabled: bool = True,
+        include_kb_tool: bool = True,
     ) -> list[BaseTool]:
         """Return the tool list the agent should bind for the current turn."""
         tools: list[BaseTool] = []
 
-        # Builtin: search_knowledge_base always included so the agent can
-        # always look up legal references.  When the KB is empty the tool
-        # returns a "no results" signal and the system prompt instructs
-        # the agent to refuse answering without retrieved evidence.
+        # Builtin: search_knowledge_base is included by default so the
+        # agent can look up legal references on its own.  When the caller
+        # has already done pre-retrieval (chat.py /ask, /stream), pass
+        # include_kb_tool=False to prevent the LLM from calling the tool
+        # again and risk a "检索服务暂时不可用" error.
         # Other builtin tools (web_search, calculate, etc.) are gated by
         # active_tool_ids so the user controls what the LLM can call.
         active_ids = set(active_tool_ids or [])
         for name, t in self._builtin.items():
             if name == "search_knowledge_base":
-                if knowledge_enabled:
+                if knowledge_enabled and include_kb_tool:
                     tools.append(t)
             elif f"builtin:{name}" in active_ids:
                 tools.append(t)

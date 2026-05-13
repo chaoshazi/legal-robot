@@ -173,15 +173,13 @@ async def _check_kb() -> bool:
     """Quick check whether the knowledge base has data.
 
     Once confirmed positive, caches permanently (no more Qdrant pings).
-    A negative result is re-checked every time so newly ingested docs
-    are picked up promptly.
+    A negative or errored result is NOT cached so transient Qdrant blips
+    don't permanently disable knowledge base access.
     """
     global _kb_available
     if _kb_available:               # True — definitely has data
         return True
-    if _kb_available is False:       # already failed once this session
-        return False
-    # _kb_available is None → first call, check Qdrant
+    # None or False — re-check Qdrant
     try:
         from qdrant_client import QdrantClient
         from app.core.config import get_settings
@@ -191,7 +189,8 @@ async def _check_kb() -> bool:
         count = await loop.run_in_executor(None, lambda: client.count(collection_name=s.qdrant_collection))
         _kb_available = count.count > 0
     except Exception:
-        _kb_available = False
+        _kb_available = None  # re-check next time
+        return False
     return _kb_available
 
 
@@ -363,7 +362,9 @@ async def chat_stream(
                 yield f"data: {json.dumps({'done': True, 'message_id': str(msg.id), 'consultation_id': str(consultation.id), 'status': consultation.status, 'sources': sources})}\n\n"
             return StreamingResponse(from_cache(), media_type="text/event-stream")
 
-    # Build agent with tools from registry
+    # Build agent with tools from registry.
+    # Knowledge base tool is excluded because pre-retrieval below already
+    # injects KB context as a SystemMessage.
     knowledge_enabled = bool(cfg.get("active_knowledge_ids"))
     registry = get_registry()
     tools = registry.get_agent_tools(
@@ -403,12 +404,11 @@ async def chat_stream(
                 return
 
             # Step 1 — Search knowledge base (visible in frontend as a tool call)
+            kb_context = None
             if knowledge_enabled:
                 yield f"data: {json.dumps({'tool_start': 'search_knowledge_base', 'done': False})}\n\n"
                 kb_context = await _retrieve_context(req.content, doc_ids=cfg.get("active_knowledge_ids"))
                 yield f"data: {json.dumps({'tool_end': 'search_knowledge_base', 'done': False})}\n\n"
-            else:
-                kb_context = None
 
             # Step 2 — Build messages with KB context
             messages = [*history]
