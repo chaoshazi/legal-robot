@@ -17,6 +17,7 @@ class Session(Base):
     status: Mapped[str] = mapped_column(String(20), default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
 
     messages: Mapped[list["Message"]] = relationship(back_populates="session", cascade="all, delete-orphan")
     consultations: Mapped[list["Consultation"]] = relationship(back_populates="session", cascade="all, delete-orphan")

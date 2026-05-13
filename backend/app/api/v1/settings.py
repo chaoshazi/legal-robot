@@ -19,6 +19,7 @@ router = APIRouter()
 LLM_CONFIG_KEYS = [
     "provider", "ollama_base_url", "ollama_model", "ollama_embed_model",
     "deepseek_api_key", "deepseek_api_base", "deepseek_model",
+    "llamacpp_base_url", "llamacpp_model",
 ]
 
 AGENT_CONFIG_KEYS = ["system_prompt", "active_tool_ids", "active_mcp_ids", "active_knowledge_ids"]
@@ -204,6 +205,16 @@ async def test_llm(
                 model=cfg.get("deepseek_model", "deepseek-chat"),
                 api_key=api_key,
                 base_url=cfg.get("deepseek_api_base", "https://api.deepseek.com"),
+                temperature=0.1,
+                max_tokens=200,
+            )
+        elif provider == "llamacpp":
+            from langchain_openai import ChatOpenAI
+
+            llm = ChatOpenAI(
+                model=cfg.get("llamacpp_model", "qwen2.5-3b-instruct-q4_k_m.gguf"),
+                api_key="not-needed",
+                base_url=cfg.get("llamacpp_base_url", "http://127.0.0.1:11435") + "/v1",
                 temperature=0.1,
                 max_tokens=200,
             )

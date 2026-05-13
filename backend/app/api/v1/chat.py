@@ -296,7 +296,7 @@ async def ask(
     system_prompt = cfg.get("system_prompt", "") or DEFAULT_SYSTEM_PROMPT
     agent = build_agent(tools, system_prompt)
 
-    history = await _load_history(db, session.id)
+    history = await _load_history(session, db)
 
     # Pre-retrieval: inject KB context so the agent can't skip searching
     if knowledge_enabled:
@@ -322,6 +322,10 @@ async def ask(
 
     msg = await _save_assistant_message(db, session.id, answer, sources=sources)
     consultation = await _create_consultation(db, current_user, session.id, req.content, answer)
+
+    session.summary = _make_summary(session.summary, req.content, answer)
+    db.add(session)
+    await db.commit()
 
     return ApiResponse(data={
         "answer": answer,
@@ -375,10 +379,11 @@ async def chat_stream(
     system_prompt = cfg.get("system_prompt", "") or DEFAULT_SYSTEM_PROMPT
     agent = build_agent(tools, system_prompt)
 
-    history = await _load_history(db, session.id)
+    history = await _load_history(session, db)
 
     # Release the DB session before streaming so the connection pool is not
     # exhausted during long LLM generations.
+    current_summary = session.summary
     session_id = session.id
     await db.close()
 
@@ -467,6 +472,10 @@ async def chat_stream(
                 consultation = await _create_consultation(
                     new_db, current_user, session_id, req.content, full_answer
                 )
+                new_summary = _make_summary(current_summary, req.content, full_answer)
+                s = (await new_db.execute(select(Session).where(Session.id == session_id))).scalar_one()
+                s.summary = new_summary
+                await new_db.commit()
 
             done_data = {
                 "done": True,
@@ -487,12 +496,25 @@ async def chat_stream(
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
-async def _load_history(db: AsyncSession, session_id: uuid.UUID) -> list:
-    """Load previous messages as LangChain message list (excludes last msg)."""
+def _make_summary(old_summary: str | None, question: str, answer: str) -> str:
+    """Append current Q&A to summary using first 200 chars of answer."""
+    answer_brief = answer[:200].replace("\n", " ")
+    entry = f"用户：{question[:100]}\n助手：{answer_brief}"
+    return f"{old_summary}\n\n{entry}" if old_summary else entry
+
+
+async def _load_history(session: Session, db: AsyncSession) -> list:
+    """Load history — use summary when over 20 rounds, else full messages."""
     result = await db.execute(
-        select(Message).where(Message.session_id == session_id).order_by(Message.created_at)
+        select(Message).where(Message.session_id == session.id).order_by(Message.created_at)
     )
     messages = result.scalars().all()
+    msg_count = len(messages)
+
+    # Use summary only after 20 rounds (40 messages) to keep context accurate
+    if msg_count >= 40 and session.summary:
+        return [SystemMessage(content=f"以下是之前的对话摘要：\n{session.summary}")]
+
     history = []
     for msg in messages[:-1]:  # exclude current input (already saved)
         if msg.role == "user":

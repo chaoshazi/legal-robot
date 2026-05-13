@@ -49,13 +49,15 @@ export interface MCPServer {
 }
 
 export interface LLMConfig {
-  provider: "ollama" | "deepseek";
+  provider: "ollama" | "deepseek" | "llamacpp";
   ollama_base_url: string;
   ollama_model: string;
   ollama_embed_model: string;
   deepseek_api_key: string;
   deepseek_api_base: string;
   deepseek_model: string;
+  llamacpp_base_url: string;
+  llamacpp_model: string;
 }
 
 export interface Tool {
@@ -85,6 +87,8 @@ export interface UnifiedConfig {
   deepseek_api_key: string;
   deepseek_api_base: string;
   deepseek_model: string;
+  llamacpp_base_url: string;
+  llamacpp_model: string;
   system_prompt: string;
   active_tool_ids: string[];
   active_mcp_ids: string[];

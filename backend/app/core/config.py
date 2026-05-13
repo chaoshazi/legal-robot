@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2:7b-instruct"
     ollama_embed_model: str = "nomic-embed-text"
 
+    llamacpp_base_url: str = "http://127.0.0.1:11435"
+    llamacpp_model: str = "qwen2.5-3b-instruct-q4_k_m.gguf"
+
     web_search_provider: str = "duckduckgo"
     web_search_api_base: str = ""
     web_search_api_key: str = ""

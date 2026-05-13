@@ -119,15 +119,18 @@ export function ModelConfigPage() {
             onChange={(e) => update({ provider: e.target.value })}
           >
             <Radio.Button value="ollama">Ollama（本地）</Radio.Button>
+            <Radio.Button value="llamacpp">llama.cpp（本地）</Radio.Button>
             <Radio.Button value="deepseek">DeepSeek（外部 API）</Radio.Button>
           </Radio.Group>
 
           <Tag
-            color={config.provider === "ollama" ? "blue" : "green"}
+            color={config.provider === "ollama" ? "blue" : config.provider === "llamacpp" ? "purple" : "green"}
             style={{ alignSelf: "flex-start" }}
           >
             当前：{config.provider === "ollama"
               ? `Ollama — ${config.ollama_model}`
+              : config.provider === "llamacpp"
+              ? `llama.cpp — ${config.llamacpp_model}`
               : `DeepSeek — ${config.deepseek_model}`}
           </Tag>
 
@@ -190,6 +193,32 @@ export function ModelConfigPage() {
                 <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
                   知识库入库和检索使用此模型，切换后需重建 Qdrant collection
                 </div>
+              </div>
+            </Space>
+          ) : config.provider === "llamacpp" ? (
+            <Space direction="vertical" style={{ width: "100%" }}>
+              <Space>
+                <div>
+                  <div style={labelStyle}>API 地址</div>
+                  <Input
+                    style={{ width: 320 }}
+                    value={config.llamacpp_base_url}
+                    onChange={(e) => update({ llamacpp_base_url: e.target.value })}
+                    placeholder="http://127.0.0.1:11435"
+                  />
+                </div>
+                <div>
+                  <div style={labelStyle}>模型</div>
+                  <Input
+                    style={{ width: 240 }}
+                    value={config.llamacpp_model}
+                    onChange={(e) => update({ llamacpp_model: e.target.value })}
+                    placeholder="qwen2.5-3b-instruct-q4_k_m.gguf"
+                  />
+                </div>
+              </Space>
+              <div style={{ fontSize: 12, color: "#999" }}>
+                llama.cpp 使用 OpenAI 兼容协议，无需 API Key
               </div>
             </Space>
           ) : (

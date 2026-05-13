@@ -81,6 +81,14 @@ def _build_llm() -> BaseLanguageModel:
             temperature=0.1,
         )
 
+    if provider == "llamacpp":
+        return ChatOpenAI(
+            model=cfg.get("llamacpp_model", "qwen2.5-3b-instruct-q4_k_m.gguf"),
+            api_key="not-needed",
+            base_url=cfg.get("llamacpp_base_url", "http://127.0.0.1:11435") + "/v1",
+            temperature=0.1,
+        )
+
     return ChatOllama(
         model=cfg.get("ollama_model", "qwen2:7b-instruct"),
         base_url=cfg.get("ollama_base_url", "http://localhost:11434"),
