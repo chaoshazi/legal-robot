@@ -11,6 +11,7 @@ LLM_CONFIG_KEYS = [
     "provider", "ollama_base_url", "ollama_model", "ollama_embed_model",
     "deepseek_api_key", "deepseek_api_base", "deepseek_model",
     "llamacpp_base_url", "llamacpp_model",
+    "web_search_provider", "tavily_api_key",
 ]
 
 AGENT_CONFIG_KEYS = ["system_prompt", "active_tool_ids", "active_mcp_ids", "active_knowledge_ids"]
@@ -28,6 +29,8 @@ def _from_env() -> dict:
         "deepseek_model": s.deepseek_model,
         "llamacpp_base_url": s.llamacpp_base_url,
         "llamacpp_model": s.llamacpp_model,
+        "web_search_provider": s.web_search_provider,
+        "tavily_api_key": s.tavily_api_key,
     }
 
 

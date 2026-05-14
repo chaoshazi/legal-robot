@@ -1,7 +1,9 @@
 """FastAPI application entry point with MCP lifecycle management."""
 
+import json
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException
@@ -21,9 +23,27 @@ from app.models.setting import SystemSetting
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+
+class _JsonFormatter(logging.Formatter):
+    """Log formatter that outputs JSON objects for structured log ingestion (Loki)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return json.dumps(
+            {
+                "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+                "level": record.levelname,
+                "name": record.name,
+                "message": record.getMessage(),
+                "module": record.module,
+                "line": record.lineno,
+            },
+            ensure_ascii=False,
+        )
+
 _LLM_CONFIG_KEYS = [
     "provider", "ollama_base_url", "ollama_model",
     "deepseek_api_key", "deepseek_api_base", "deepseek_model",
+    "tavily_api_key", "web_search_provider",
 ]
 
 _AGENT_CONFIG_KEYS = ["system_prompt", "active_tool_ids", "active_mcp_ids", "active_knowledge_ids"]
@@ -110,12 +130,33 @@ async def _stop_mcp():
         logger.warning("MCP cleanup error: %s", e)
 
 
+def _setup_json_logging():
+    """Configure all loggers to output JSON for Loki/Promtail ingestion."""
+    handler = logging.StreamHandler()
+    handler.setFormatter(_JsonFormatter())
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(logging.DEBUG if settings.app_debug else logging.INFO)
+
+    # Silence noisy libraries
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("langchain").setLevel(logging.WARNING)
+    logging.getLogger("aiosqlite").setLevel(logging.WARNING)
+    logging.getLogger("sentry_sdk").setLevel(logging.WARNING)
+
+    # Uvicorn access log — use same JSON handler
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+        uv_logger = logging.getLogger(name)
+        uv_logger.handlers.clear()
+        uv_logger.addHandler(handler)
+        uv_logger.propagate = False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logging.basicConfig(
-        level=logging.DEBUG if settings.app_debug else logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    _setup_json_logging()
     if settings.sentry_dsn:
         sentry_sdk.init(
             dsn=settings.sentry_dsn,

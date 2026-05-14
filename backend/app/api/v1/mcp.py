@@ -11,6 +11,7 @@ from app.models.mcp_server import MCPServer
 from app.models.user import User
 from app.schemas.common import ApiResponse
 from app.schemas.mcp import MCPServerCreate, MCPServerInfo, MCPServerUpdate
+from app.services.audit import log_audit
 
 router = APIRouter()
 
@@ -43,6 +44,10 @@ async def create_server(
     db.add(server)
     await db.commit()
     await db.refresh(server)
+    await log_audit(
+        user_id=str(current_user.id), action="mcp.create", resource="mcp",
+        detail={"name": body.name, "transport": body.transport},
+    )
     return ApiResponse(data=_server_info(server))
 
 
@@ -64,6 +69,10 @@ async def update_server(
 
     await db.commit()
     await db.refresh(server)
+    await log_audit(
+        user_id=str(current_user.id), action="mcp.update", resource="mcp",
+        detail={"server_id": server_id, "changes": body.model_dump(exclude_unset=True)},
+    )
     return ApiResponse(data=_server_info(server))
 
 
@@ -80,6 +89,10 @@ async def delete_server(
 
     await db.delete(server)
     await db.commit()
+    await log_audit(
+        user_id=str(current_user.id), action="mcp.delete", resource="mcp",
+        detail={"server_id": server_id, "name": server.name},
+    )
     return ApiResponse(data=None)
 
 
@@ -197,6 +210,10 @@ async def toggle_server(
     server.enabled = not server.enabled
     await db.commit()
     await db.refresh(server)
+    await log_audit(
+        user_id=str(current_user.id), action="mcp.toggle", resource="mcp",
+        detail={"server_id": server_id, "name": server.name, "enabled": server.enabled},
+    )
     return ApiResponse(data={"id": str(server.id), "enabled": server.enabled})
 
 

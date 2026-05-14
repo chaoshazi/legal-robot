@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { Card, Input, Button, Space, message, Tag, Checkbox, Divider, Spin, Typography } from "antd";
-import { SaveOutlined, LinkOutlined } from "@ant-design/icons";
+import { Card, Input, Button, Space, message, Tag, Checkbox, Divider, Spin, Typography, Select } from "antd";
+import { SaveOutlined, LinkOutlined, GlobalOutlined, KeyOutlined } from "@ant-design/icons";
 import type { UnifiedConfig, Tool, MCPServer, KnowledgeDocument } from "../../types";
 import { getUnifiedConfig, updateUnifiedConfig } from "../../api/settings";
 import { listTools } from "../../api/tools";
@@ -119,7 +119,43 @@ export function ParameterSettingsPage() {
         )}
       </Card>
 
-      {/* Section 3: MCP Bindings */}
+      {/* Section 3: Web Search */}
+      <Card
+        title={<span><GlobalOutlined /> 联网搜索</span>}
+        style={{ marginBottom: 16 }}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>搜索提供商</Typography.Text>
+          <Select
+            value={config.web_search_provider || "duckduckgo"}
+            onChange={(val) => update({ web_search_provider: val })}
+            style={{ width: 240 }}
+            options={[
+              { value: "duckduckgo", label: "DuckDuckGo（无需配置）" },
+              { value: "tavily", label: "Tavily（需 API Key）" },
+            ]}
+          />
+        </div>
+
+        {config.web_search_provider === "tavily" && (
+          <div>
+            <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>Tavily API Key</Typography.Text>
+            <Input.Password
+              value={config.tavily_api_key}
+              onChange={(e) => update({ tavily_api_key: e.target.value })}
+              placeholder="输入 Tavily API Key"
+              prefix={<KeyOutlined />}
+              visibilityToggle
+              style={{ maxWidth: 400 }}
+            />
+            <div style={{ marginTop: 6, fontSize: 12, color: "#999" }}>
+              在 <Typography.Link href="https://tavily.com" target="_blank">Tavily 官网</Typography.Link> 注册获取 API Key
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Section 4: MCP Bindings */}
       <Card title={<span><LinkOutlined /> 链接 MCP 服务</span>} style={{ marginBottom: 16 }}>
         {mcps.length === 0 ? (
           <Typography.Text type="secondary">
@@ -146,7 +182,7 @@ export function ParameterSettingsPage() {
         )}
       </Card>
 
-      {/* Section 4: Knowledge Base */}
+      {/* Section 5: Knowledge Base */}
       <Card title={<span><LinkOutlined /> 知识库</span>} style={{ marginBottom: 16 }}>
         {knowledgeDocs.length === 0 ? (
           <Typography.Text type="secondary">

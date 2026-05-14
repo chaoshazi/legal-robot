@@ -12,6 +12,13 @@ export const consultationApi = {
 
   review: (
     consultationId: string,
-    body: { action: "publish" | "reject"; final_answer?: string | null; comment?: string | null },
+    body: {
+      action: "publish" | "reject";
+      final_answer?: string | null;
+      comment?: string | null;
+      score_name?: string;
+      score_value?: number;
+      score_comment?: string | null;
+    },
   ) => client.post<ApiResponse<ConsultationInfo>>(`/consultations/${consultationId}/review`, body),
 };

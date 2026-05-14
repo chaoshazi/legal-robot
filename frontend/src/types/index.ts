@@ -89,6 +89,8 @@ export interface UnifiedConfig {
   deepseek_model: string;
   llamacpp_base_url: string;
   llamacpp_model: string;
+  web_search_provider: string;
+  tavily_api_key: string;
   system_prompt: string;
   active_tool_ids: string[];
   active_mcp_ids: string[];
@@ -171,4 +173,17 @@ export interface CreateUserRequest {
 export interface CreateRoleRequest {
   name: string;
   description?: string;
+}
+
+export interface EvaluationInfo {
+  id: number;
+  consultation_id: string;
+  trace_id: string;
+  score_name: string;
+  score_value: number;
+  data_type: string;
+  comment: string | null;
+  evaluated_by: string | null;
+  question: string;
+  created_at: string;
 }

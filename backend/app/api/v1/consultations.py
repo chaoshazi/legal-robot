@@ -11,6 +11,7 @@ from app.models.consultation import Consultation
 from app.models.message import Message
 from app.models.user import User
 from app.schemas.common import ApiResponse
+from app.services.evaluation import create_evaluation
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -34,6 +35,10 @@ class ReviewRequest(BaseModel):
     action: str  # publish / reject
     final_answer: str | None = None
     comment: str | None = None
+    # Optional evaluation fields
+    score_name: str | None = None
+    score_value: float | None = None
+    score_comment: str | None = None
 
 
 @router.get("")
@@ -106,6 +111,18 @@ async def review_consultation(
     consultation.reviewed_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(consultation)
+
+    # Fire-and-forget evaluation: only when publishing with a score
+    if req.action == "publish" and req.score_value is not None and consultation.langfuse_trace_id:
+        await create_evaluation(
+            consultation_id=consultation.id,
+            trace_id=consultation.langfuse_trace_id,
+            score_name=req.score_name or "answer_quality",
+            score_value=req.score_value,
+            evaluated_by=current_user.id,
+            comment=req.score_comment,
+        )
+
     return ApiResponse(data=_consultation_info(consultation))
 
 

@@ -30,6 +30,7 @@ from app.schemas.auth import (
     UserInfo,
 )
 from app.schemas.common import ApiResponse
+from app.services.audit import log_audit
 
 router = APIRouter()
 
@@ -74,6 +75,7 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     refresh = create_refresh_token(str(user.id))
     await _save_refresh(db, user.id, refresh)
 
+    await log_audit(user_id=str(user.id), action="login", resource="auth", detail={"email": user.email})
     return ApiResponse(data=AuthResponse(access_token=access, refresh_token=refresh, user=_to_info(user)))
 
 

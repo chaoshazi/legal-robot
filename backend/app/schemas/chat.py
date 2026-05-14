@@ -32,3 +32,4 @@ class RenameSessionRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     session_id: str
     content: str
+    enable_web_search: bool = True

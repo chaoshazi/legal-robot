@@ -22,6 +22,7 @@ from app.schemas.auth import (
     UserInfo,
 )
 from app.schemas.common import ApiResponse
+from app.services.audit import log_audit
 
 router = APIRouter()
 
@@ -90,6 +91,10 @@ async def update_user(
 
     await db.commit()
     await db.refresh(user)
+    await log_audit(
+        user_id=str(current_user.id), action="user.update", resource="users",
+        detail={"target_user_id": user_id, "changes": req.model_dump(exclude_none=True)},
+    )
     return ApiResponse(data=_admin_info(user))
 
 
@@ -121,6 +126,10 @@ async def create_user(
     result = await db.execute(
         select(User).options(selectinload(User.role)).where(User.id == user.id)
     )
+    await log_audit(
+        user_id=str(current_user.id), action="user.create", resource="users",
+        detail={"email": req.email, "display_name": req.display_name, "role_id": str(req.role_id)},
+    )
     return ApiResponse(data=_admin_info(result.scalar_one()))
 
 
@@ -140,6 +149,10 @@ async def delete_user(
     await db.execute(delete(RefreshToken).where(RefreshToken.user_id == user.id))
     await db.delete(user)
     await db.commit()
+    await log_audit(
+        user_id=str(current_user.id), action="user.delete", resource="users",
+        detail={"target_user_id": user_id, "email": user.email},
+    )
     return ApiResponse(data=None)
 
 
@@ -159,6 +172,10 @@ async def admin_reset_password(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码至少 6 位")
     user.hashed_password = hash_password(req.password)
     await db.commit()
+    await log_audit(
+        user_id=str(current_user.id), action="user.reset_password", resource="users",
+        detail={"target_user_id": user_id},
+    )
     return ApiResponse(message="密码已重置")
 
 
@@ -189,6 +206,10 @@ async def create_role(
     db.add(role)
     await db.commit()
     await db.refresh(role)
+    await log_audit(
+        user_id=str(current_user.id), action="role.create", resource="users",
+        detail={"name": req.name},
+    )
     return ApiResponse(data=_role_info(role))
 
 
@@ -210,6 +231,10 @@ async def update_role(
         role.description = req.description
     await db.commit()
     await db.refresh(role)
+    await log_audit(
+        user_id=str(current_user.id), action="role.update", resource="users",
+        detail={"role_id": role_id, "changes": req.model_dump(exclude_none=True)},
+    )
     return ApiResponse(data=_role_info(role))
 
 
@@ -234,6 +259,10 @@ async def delete_role(
 
     await db.delete(role)
     await db.commit()
+    await log_audit(
+        user_id=str(current_user.id), action="role.delete", resource="users",
+        detail={"role_id": role_id, "name": role.name},
+    )
     return ApiResponse(data=None)
 
 

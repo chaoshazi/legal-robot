@@ -6,6 +6,7 @@ from app.models.token import RefreshToken
 from app.models.session import Session
 from app.models.message import Message
 from app.models.consultation import Consultation
+from app.models.evaluation import Evaluation
 from app.models.setting import SystemSetting
 from app.models.knowledge import KnowledgeDocument
 from app.models.mcp_server import MCPServer

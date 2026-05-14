@@ -17,6 +17,7 @@ class Consultation(Base):
     question: Mapped[str] = mapped_column(Text, nullable=False)
     draft_answer: Mapped[str | None] = mapped_column(Text)
     final_answer: Mapped[str | None] = mapped_column(Text)
+    langfuse_trace_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, default="draft")
     reviewer_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     review_comment: Mapped[str | None] = mapped_column(Text)

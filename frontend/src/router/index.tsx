@@ -14,6 +14,7 @@ import { ParameterSettingsPage } from "../pages/settings/ParameterSettingsPage";
 import { ConsultationReviewPage } from "../pages/consultation/ConsultationReviewPage";
 import { UserManagementPage } from "../pages/users/UserManagementPage";
 import { SkillsPage } from "../pages/skills/SkillsPage";
+import { EvaluationPage } from "../pages/evaluation/EvaluationPage";
 import { useAuthStore } from "../stores/authStore";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -123,6 +124,14 @@ export const routerConfig: RouteObject[] = [
         element: (
           <RoleGuard roles={["admin", "lawyer", "user"]}>
             <SkillsPage />
+          </RoleGuard>
+        ),
+      },
+      {
+        path: "evaluations",
+        element: (
+          <RoleGuard roles={["admin", "lawyer"]}>
+            <EvaluationPage />
           </RoleGuard>
         ),
       },

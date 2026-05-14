@@ -129,4 +129,5 @@ def build_agent(
     )
     # Limit tool-calling loop: 9999 (default) causes repeated tool calls
     # without producing a final answer. 25 allows ~8-10 tool invocations.
-    return agent.with_config({"recursion_limit": 25})
+    config = {"recursion_limit": 25}
+    return agent.with_config(config)

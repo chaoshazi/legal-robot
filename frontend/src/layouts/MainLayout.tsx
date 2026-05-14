@@ -14,6 +14,7 @@ import {
   FileTextOutlined,
   TeamOutlined,
   ThunderboltOutlined,
+  StarOutlined,
 } from "@ant-design/icons";
 import { useAuthStore } from "../stores/authStore";
 import { getPermissionMatrix } from "../api/permissions";
@@ -32,6 +33,7 @@ const iconMap: Record<string, React.ReactNode> = {
   "/profile": <UserOutlined />,
   "/permissions": <SafetyCertificateOutlined />,
   "/skills": <ThunderboltOutlined />,
+  "/evaluations": <StarOutlined />,
 };
 
 const allMenuItems = [
@@ -45,12 +47,13 @@ const allMenuItems = [
   { key: "/consultations", icon: iconMap["/consultations"], label: "咨询单审核" },
   { key: "/users", icon: iconMap["/users"], label: "用户角色管理" },
   { key: "/permissions", icon: iconMap["/permissions"], label: "权限管理" },
+  { key: "/evaluations", icon: iconMap["/evaluations"], label: "评估管理" },
   { key: "/profile", icon: iconMap["/profile"], label: "个人中心" },
 ];
 
 const defaultRoleMenuMap: Record<string, string[]> = {
-  admin: ["/", "/skills", "/models", "/settings", "/tools", "/mcp", "/knowledge", "/consultations", "/users", "/profile", "/permissions"],
-  lawyer: ["/", "/skills", "/models", "/settings", "/knowledge", "/consultations", "/profile"],
+  admin: ["/", "/skills", "/models", "/settings", "/tools", "/mcp", "/knowledge", "/consultations", "/users", "/profile", "/permissions", "/evaluations"],
+  lawyer: ["/", "/skills", "/models", "/settings", "/knowledge", "/consultations", "/profile", "/evaluations"],
   user: ["/", "/skills", "/consultations", "/profile"],
 };
 

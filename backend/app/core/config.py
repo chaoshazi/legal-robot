@@ -48,10 +48,11 @@ class Settings(BaseSettings):
     web_search_provider: str = "duckduckgo"
     web_search_api_base: str = ""
     web_search_api_key: str = ""
+    tavily_api_key: str = ""
 
-    langsmith_api_key: str = ""
-    langsmith_project: str = "legal-consult-bot"
-    langsmith_tracing: bool = False
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "http://localhost:3000"
 
     sentry_dsn: str = ""
 

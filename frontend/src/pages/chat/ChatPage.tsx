@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Input, Button, Typography, Spin, Space, Select, Popconfirm, message, Modal, Tag, Collapse } from "antd";
+import { Input, Button, Typography, Spin, Space, Select, Popconfirm, message, Modal, Tag, Collapse, Switch } from "antd";
 import { SendOutlined, RobotOutlined, UserOutlined, DeleteOutlined, PlusOutlined, EditOutlined, SearchOutlined, GlobalOutlined, ClockCircleOutlined, CalculatorOutlined, BulbOutlined } from "@ant-design/icons";
 import { chatApi } from "../../api/chat";
+import { getUnifiedConfig } from "../../api/settings";
 
 interface Source {
   law: string;
@@ -33,6 +34,7 @@ export function ChatPage() {
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [lastReasoning, setLastReasoning] = useState("");
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
@@ -44,6 +46,20 @@ export function ChatPage() {
   // Load sessions on mount
   useEffect(() => {
     loadSessions();
+  }, []);
+
+  // Load initial web search toggle state from saved config
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getUnifiedConfig();
+        if (data?.active_tool_ids) {
+          setWebSearchEnabled(data.active_tool_ids.includes("builtin:web_search"));
+        }
+      } catch {
+        // default to true
+      }
+    })();
   }, []);
 
   const loadSessions = async () => {
@@ -106,7 +122,7 @@ export function ChatPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ session_id: sessionId, content: question }),
+        body: JSON.stringify({ session_id: sessionId, content: question, enable_web_search: webSearchEnabled }),
         signal: abortRef.current.signal,
       });
 
@@ -391,6 +407,21 @@ export function ChatPage() {
           placeholder="输入新会话名称"
         />
       </Modal>
+
+      {/* Web search toggle */}
+      <div style={{ borderTop: "1px solid #f0f0f0", padding: "6px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <GlobalOutlined style={{ marginRight: 4, color: webSearchEnabled ? "#1677ff" : "#999" }} />
+          联网搜索
+        </Typography.Text>
+        <Switch
+          checked={webSearchEnabled}
+          onChange={setWebSearchEnabled}
+          checkedChildren="已开启"
+          unCheckedChildren="已关闭"
+          size="small"
+        />
+      </div>
 
       {/* Input */}
       <div style={{ borderTop: "1px solid #f0f0f0", padding: "16px 24px" }}>

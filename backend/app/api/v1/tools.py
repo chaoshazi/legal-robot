@@ -10,6 +10,7 @@ from app.models.tool import Tool
 from app.models.user import User
 from app.schemas.common import ApiResponse
 from app.schemas.tool import CreateToolRequest, ToolInfo, UpdateToolRequest
+from app.services.audit import log_audit
 
 router = APIRouter()
 
@@ -97,6 +98,10 @@ async def update_tool(
         setattr(tool, key, value)
     await db.commit()
     await db.refresh(tool)
+    await log_audit(
+        user_id=str(current_user.id), action="tool.update", resource="tools",
+        detail={"tool_id": tool_id, "changes": patch},
+    )
     return ApiResponse(data=_tool_info(tool))
 
 
@@ -112,4 +117,8 @@ async def delete_tool(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool not found")
     await db.delete(tool)
     await db.commit()
+    await log_audit(
+        user_id=str(current_user.id), action="tool.delete", resource="tools",
+        detail={"tool_id": tool_id, "name": tool.name},
+    )
     return ApiResponse(data=None)

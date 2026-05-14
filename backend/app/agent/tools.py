@@ -65,9 +65,13 @@ async def web_search(query: str) -> str:
     Args:
         query: 搜索关键词
     """
+    from app.agent.config import get_llm_config
     settings = get_settings()
-    provider = settings.web_search_provider
+    # DB config takes precedence (set via settings UI), env is fallback
+    provider = get_llm_config().get("web_search_provider") or settings.web_search_provider
 
+    if provider == "tavily":
+        return await _tavily_search(query)
     if provider == "custom" and settings.web_search_api_base:
         return await _custom_web_search(query, settings)
     return await _duckduckgo_search(query)
@@ -139,6 +143,44 @@ async def _custom_web_search(query: str, settings) -> str:
         link = item.get("link", item.get("url", ""))
         snippet = item.get("snippet", item.get("content", ""))
         parts.append(f"{i}. {title}\n  {link}\n  {snippet}")
+
+    return "互联网搜索结果（仅供参考，请以权威渠道为准）：\n" + "\n\n".join(parts)
+
+
+async def _tavily_search(query: str) -> str:
+    """Search via Tavily REST API (requires tavily_api_key config)."""
+    from app.agent.config import get_llm_config
+
+    api_key = get_llm_config().get("tavily_api_key") or get_settings().tavily_api_key
+    if not api_key:
+        return "[Tavily 搜索失败: API key 未配置，请在设置页面配置 Tavily API Key]"
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key": api_key,
+                    "query": query,
+                    "search_depth": "basic",
+                    "max_results": 5,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        return f"[Tavily 搜索失败: {e}]"
+
+    results = data.get("results", [])
+    if not results:
+        return "【搜索结果为空】未找到相关结果，请尝试使用不同的搜索关键词。"
+
+    parts = []
+    for i, r in enumerate(results[:5], 1):
+        title = r.get("title", "")
+        link = r.get("url", "")
+        content = r.get("content", "")
+        parts.append(f"{i}. {title}\n  {link}\n  {content}")
 
     return "互联网搜索结果（仅供参考，请以权威渠道为准）：\n" + "\n\n".join(parts)
 

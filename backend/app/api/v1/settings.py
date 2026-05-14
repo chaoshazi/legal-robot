@@ -13,6 +13,7 @@ from app.models.setting import SystemSetting
 from app.models.user import User
 from app.schemas.common import ApiResponse
 from app.schemas.setting import AgentConfig, LLMConfig, LLMTestRequest, UnifiedConfig
+from app.services.audit import log_audit
 
 router = APIRouter()
 
@@ -20,6 +21,7 @@ LLM_CONFIG_KEYS = [
     "provider", "ollama_base_url", "ollama_model", "ollama_embed_model",
     "deepseek_api_key", "deepseek_api_base", "deepseek_model",
     "llamacpp_base_url", "llamacpp_model",
+    "web_search_provider", "tavily_api_key",
 ]
 
 AGENT_CONFIG_KEYS = ["system_prompt", "active_tool_ids", "active_mcp_ids", "active_knowledge_ids"]
@@ -173,6 +175,10 @@ async def update_llm_settings(
             await _upsert(db, key, str(value) if value is not None else "")
     await db.commit()
     await sync_cache_from_db(db)
+    await log_audit(
+        user_id=str(current_user.id), action="settings.update_llm", resource="settings",
+        detail={"updated_keys": list(data.keys())},
+    )
     return ApiResponse(data=LLMConfig(**get_llm_config()))
 
 
@@ -289,6 +295,10 @@ async def update_agent_config(
     await db.commit()
     # Sync to in-memory cache
     await sync_agent_cache_from_db(db)
+    await log_audit(
+        user_id=str(current_user.id), action="settings.update_agent", resource="settings",
+        detail={"system_prompt_set": bool(body.system_prompt)},
+    )
     return ApiResponse(data=body)
 
 
@@ -358,4 +368,8 @@ async def update_unified_config(
     await sync_cache_from_db(db)
     await sync_agent_cache_from_db(db)
 
+    await log_audit(
+        user_id=str(current_user.id), action="settings.update_unified", resource="settings",
+        detail={"updated_keys": [k for k, v in data.items() if v is not None and v != [] and v != ""]},
+    )
     return ApiResponse(data=body)

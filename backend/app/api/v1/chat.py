@@ -28,6 +28,7 @@ from app.agent.cache import SemanticCache
 from app.agent.config import get_agent_config
 from app.agent.registry import get_registry
 from app.core.database import async_session, get_db
+from app.core.langfuse import trace_agent_call
 from app.middleware.disclaimer import add_disclaimer
 from app.rag.retriever import async_get_retriever
 from app.models.consultation import Consultation
@@ -288,8 +289,11 @@ async def ask(
     # Build agent with tools from registry
     knowledge_enabled = bool(cfg.get("active_knowledge_ids"))
     registry = get_registry()
+    active_ids = cfg.get("active_tool_ids", [])
+    if not req.enable_web_search:
+        active_ids = [id for id in active_ids if id != "builtin:web_search"]
     tools = registry.get_agent_tools(
-        active_tool_ids=cfg.get("active_tool_ids"),
+        active_tool_ids=active_ids,
         active_mcp_ids=cfg.get("active_mcp_ids"),
         knowledge_enabled=knowledge_enabled,
     )
@@ -303,11 +307,23 @@ async def ask(
         kb_context = await _retrieve_context(req.content, doc_ids=cfg.get("active_knowledge_ids"))
     else:
         kb_context = None
+
+    # Web search pre-retrieval: runs automatically when toggle is on
+    web_context = None
+    if req.enable_web_search:
+        try:
+            from app.agent.tools import web_search as do_web_search
+            web_context = await do_web_search.ainvoke({"query": req.content})
+        except Exception as e:
+            web_context = f"[联网搜索失败: {e}]"
+
     messages: list = [*history]
     if kb_context:
         messages.append(SystemMessage(content=f"以下是知识库中检索到的相关法律条文，请基于这些内容回答用户问题：\n\n{kb_context}"))
     elif knowledge_enabled:
         messages.append(SystemMessage(content="知识库检索结果为空，未找到与用户问题相关的法律条文。"))
+    if web_context:
+        messages.append(SystemMessage(content=f"以下是联网搜索到的信息：\n\n{web_context}"))
     messages.append(HumanMessage(content=req.content))
 
     inputs = {"messages": messages}
@@ -317,11 +333,16 @@ async def ask(
     answer = await add_disclaimer(answer)
     sources = _extract_sources(messages)
 
+    # LangFuse trace
+    langfuse_trace_id = await trace_agent_call(req.content, answer, user_id=str(current_user.id))
+
     if cacheable:
         _get_cache().set(req.content, {"answer": answer, "sources": sources})
 
     msg = await _save_assistant_message(db, session.id, answer, sources=sources)
     consultation = await _create_consultation(db, current_user, session.id, req.content, answer)
+    if langfuse_trace_id:
+        consultation.langfuse_trace_id = langfuse_trace_id
 
     session.summary = _make_summary(session.summary, req.content, answer)
     db.add(session)
@@ -371,8 +392,11 @@ async def chat_stream(
     # injects KB context as a SystemMessage.
     knowledge_enabled = bool(cfg.get("active_knowledge_ids"))
     registry = get_registry()
+    active_ids = cfg.get("active_tool_ids", [])
+    if not req.enable_web_search:
+        active_ids = [id for id in active_ids if id != "builtin:web_search"]
     tools = registry.get_agent_tools(
-        active_tool_ids=cfg.get("active_tool_ids"),
+        active_tool_ids=active_ids,
         active_mcp_ids=cfg.get("active_mcp_ids"),
         knowledge_enabled=knowledge_enabled,
     )
@@ -415,12 +439,25 @@ async def chat_stream(
                 kb_context = await _retrieve_context(req.content, doc_ids=cfg.get("active_knowledge_ids"))
                 yield f"data: {json.dumps({'tool_end': 'search_knowledge_base', 'done': False})}\n\n"
 
-            # Step 2 — Build messages with KB context
+            # Step 1.5 — Web search pre-retrieval (visible in frontend as a tool call)
+            web_context = None
+            if req.enable_web_search:
+                yield f"data: {json.dumps({'tool_start': 'web_search', 'done': False})}\n\n"
+                try:
+                    from app.agent.tools import web_search as do_web_search
+                    web_context = await do_web_search.ainvoke({"query": req.content})
+                except Exception as e:
+                    web_context = f"[联网搜索失败: {e}]"
+                yield f"data: {json.dumps({'tool_end': 'web_search', 'done': False})}\n\n"
+
+            # Step 2 — Build messages with context
             messages = [*history]
             if kb_context:
                 messages.append(SystemMessage(content=f"以下是知识库中检索到的相关法律条文，请基于这些内容回答用户问题：\n\n{kb_context}"))
             elif knowledge_enabled:
                 messages.append(SystemMessage(content="知识库检索结果为空，未找到与用户问题相关的法律条文。"))
+            if web_context:
+                messages.append(SystemMessage(content=f"以下是联网搜索到的信息：\n\n{web_context}"))
             messages.append(HumanMessage(content=req.content))
             inputs = {"messages": messages}
 
@@ -463,6 +500,9 @@ async def chat_stream(
             # Agent done — apply disclaimer & persist
             full_answer = await add_disclaimer(full_answer)
 
+            # LangFuse trace
+            langfuse_trace_id = await trace_agent_call(req.content, full_answer, user_id=str(current_user.id))
+
             if cacheable:
                 _get_cache().set(req.content, {"answer": full_answer, "sources": sources})
 
@@ -472,6 +512,8 @@ async def chat_stream(
                 consultation = await _create_consultation(
                     new_db, current_user, session_id, req.content, full_answer
                 )
+                if langfuse_trace_id:
+                    consultation.langfuse_trace_id = langfuse_trace_id
                 new_summary = _make_summary(current_summary, req.content, full_answer)
                 s = (await new_db.execute(select(Session).where(Session.id == session_id))).scalar_one()
                 s.summary = new_summary

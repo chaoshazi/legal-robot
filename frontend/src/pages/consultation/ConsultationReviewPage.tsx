@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import {
-  Table, Button, Tag, Space, message, Modal, Input, Typography, Spin, Tabs, Descriptions, Divider,
+  Table, Button, Tag, Space, message, Modal, Input, Typography, Tabs, Descriptions, Divider, Rate,
 } from "antd";
 import {
-  CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, FileTextOutlined,
+  CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, FileTextOutlined, StarOutlined,
 } from "@ant-design/icons";
 import { consultationApi } from "../../api/consultation";
 import { useAuthStore } from "../../stores/authStore";
@@ -35,6 +35,8 @@ export function ConsultationReviewPage() {
   const [submitting, setSubmitting] = useState(false);
   const [finalAnswer, setFinalAnswer] = useState("");
   const [comment, setComment] = useState("");
+  const [scoreValue, setScoreValue] = useState(0);
+  const [scoreComment, setScoreComment] = useState("");
 
   const loadAll = async () => {
     setLoading(true);
@@ -72,6 +74,8 @@ export function ConsultationReviewPage() {
     setReviewing(c);
     setFinalAnswer(c.draft_answer ?? "");
     setComment("");
+    setScoreValue(0);
+    setScoreComment("");
     setReviewOpen(true);
   };
 
@@ -83,6 +87,9 @@ export function ConsultationReviewPage() {
         action,
         final_answer: action === "publish" ? finalAnswer : null,
         comment: comment || null,
+        score_name: action === "publish" && scoreValue > 0 ? "answer_quality" : undefined,
+        score_value: action === "publish" && scoreValue > 0 ? scoreValue : undefined,
+        score_comment: action === "publish" && scoreValue > 0 ? (scoreComment || null) : undefined,
       });
       message.success(action === "publish" ? "已发布" : "已驳回");
       setReviewOpen(false);
@@ -296,6 +303,28 @@ export function ConsultationReviewPage() {
 
             {reviewing.status === "draft" && isLawyerOrAdmin && (
               <>
+                <Divider orientation="left" plain>评分（发布时提交）</Divider>
+                <Space direction="vertical" style={{ width: "100%" }}>
+                  <Space>
+                    <Typography.Text strong>回答质量：</Typography.Text>
+                    <Rate
+                      value={scoreValue / 2}
+                      count={5}
+                      onChange={(v) => setScoreValue(v * 2)}
+                      character={<StarOutlined />}
+                    />
+                    <Typography.Text type="secondary">
+                      {scoreValue > 0 ? `${scoreValue}/10` : "未评分"}
+                    </Typography.Text>
+                  </Space>
+                  <Input.TextArea
+                    rows={2}
+                    value={scoreComment}
+                    onChange={(e) => setScoreComment(e.target.value)}
+                    placeholder="评分备注（可选）..."
+                  />
+                </Space>
+
                 <Divider orientation="left" plain>审核意见（可选）</Divider>
                 <Input.TextArea
                   rows={3}

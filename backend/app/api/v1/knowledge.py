@@ -14,6 +14,7 @@ from app.models.knowledge import KnowledgeDocument
 from app.models.user import User
 from app.rag.ingest import _SUPPORTED_EXTENSIONS, ingest_file
 from app.schemas.common import ApiResponse
+from app.services.audit import log_audit
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -59,7 +60,10 @@ async def upload_document(
     db.add(doc)
     await db.commit()
     await db.refresh(doc)
-
+    await log_audit(
+        user_id=str(current_user.id), action="knowledge.upload", resource="knowledge",
+        detail={"filename": file.filename, "file_size": len(content)},
+    )
     return ApiResponse(data=_doc_info(doc))
 
 
@@ -99,7 +103,10 @@ async def ingest_document(
         doc.error = str(e)
     await db.commit()
     await db.refresh(doc)
-
+    await log_audit(
+        user_id=str(current_user.id), action="knowledge.ingest", resource="knowledge",
+        detail={"doc_id": doc_id, "filename": doc.filename, "status": doc.status},
+    )
     return ApiResponse(data=_doc_info(doc))
 
 
@@ -118,7 +125,10 @@ async def delete_document(
         os.remove(doc.file_path)
     await db.delete(doc)
     await db.commit()
-
+    await log_audit(
+        user_id=str(current_user.id), action="knowledge.delete", resource="knowledge",
+        detail={"doc_id": doc_id, "filename": doc.filename},
+    )
     return ApiResponse(data=None)
 
 
