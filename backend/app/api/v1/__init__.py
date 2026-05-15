@@ -10,6 +10,7 @@ from app.api.v1.mcp import router as mcp_router
 from app.api.v1.settings import router as settings_router
 from app.api.v1.tools import router as tools_router
 from app.api.v1.permissions import router as permissions_router
+from app.api.v1.upload import router as upload_router
 from app.api.v1.audit import router as audit_router
 from app.api.v1.evaluations import router as evaluations_router
 
@@ -26,3 +27,4 @@ router.include_router(permissions_router, prefix="/permissions", tags=["Permissi
 router.include_router(external_mcp_router, prefix="/external-mcp", tags=["External MCP"])
 router.include_router(audit_router, prefix="/audit-logs", tags=["Audit Logs"])
 router.include_router(evaluations_router, prefix="/evaluations", tags=["Evaluations"])
+router.include_router(upload_router, prefix="/chat", tags=["Chat"])

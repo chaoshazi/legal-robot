@@ -56,6 +56,20 @@ class Settings(BaseSettings):
 
     sentry_dsn: str = ""
 
+    # Upload / attachment settings
+    upload_max_size_mb: int = 20
+    upload_allowed_types: str = (
+        "image/jpeg,image/png,image/webp,"
+        "audio/webm,audio/wav,audio/mp4,"
+        "application/pdf,"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
+        "text/plain"
+    )
+    upload_storage_path: str = "data/uploads"
+    asr_provider: str = "whisper"
+    asr_model_size: str = "small"
+
     @model_validator(mode="after")
     def _validate_production_settings(self):
         if self.app_env == "production":

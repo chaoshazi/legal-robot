@@ -9,6 +9,7 @@ from qdrant_client.http.models import Distance, VectorParams
 
 from app.core.config import get_settings
 from app.rag.embeddings import get_embeddings
+from app.utils.file_processing import SUPPORTED_DOCUMENT_EXTENSIONS, extract_text_from_file
 
 settings = get_settings()
 
@@ -41,116 +42,10 @@ def _ensure_collection(client: QdrantClient):
 
 # ── Multi-format text extraction ────────────────────────────────────────
 
-_SUPPORTED_EXTENSIONS = {".txt", ".md", ".pdf", ".docx", ".doc", ".xlsx"}
-
-
-def _extract_text(filepath: str | Path) -> str:
-    """Extract text from a file based on its extension.
-
-    Falls back to OCR for scanned PDFs (text extraction yields <50 chars).
-    """
-    path = Path(filepath)
-    ext = path.suffix.lower()
-
-    if ext == ".txt" or ext == ".md":
-        return path.read_text("utf-8")
-
-    if ext == ".pdf":
-        return _extract_pdf(path)
-
-    if ext == ".docx" or ext == ".doc":
-        return _extract_docx(path)
-
-    if ext == ".xlsx":
-        return _extract_xlsx(path)
-
-    raise ValueError(f"Unsupported file extension: {ext}")
-
-
-def _extract_pdf(path: Path) -> str:
-    """Extract text from a PDF. Falls back to OCR if the PDF appears scanned."""
-    text = ""
-    try:
-        import pypdf
-
-        reader = pypdf.PdfReader(str(path))
-        for page in reader.pages:
-            page_text = page.extract_text() or ""
-            text += page_text + "\n"
-    except Exception:
-        text = ""
-
-    # If text extraction yielded nothing meaningful, assume scanned and OCR
-    if len(text.strip()) < 50:
-        ocr_text = _ocr_pdf(path)
-        if ocr_text.strip():
-            return ocr_text
-
-    return text.strip()
-
-
-def _ocr_pdf(path: Path) -> str:
-    """Convert PDF pages to images and run PaddleOCR."""
-    try:
-        import pdf2image
-        from paddleocr import PaddleOCR
-
-        ocr = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
-        images = pdf2image.convert_from_path(str(path), dpi=200)
-    except Exception:
-        return ""
-
-    lines: list[str] = []
-    for img in images:
-        import numpy as np
-
-        img_array = np.array(img)
-        result = ocr.ocr(img_array, cls=True)
-        if result and result[0]:
-            page_text = " ".join(item[1][0] for item in result[0])
-            lines.append(page_text)
-    return "\n".join(lines)
-
-
-def _extract_docx(path: Path) -> str:
-    """Extract text from a .docx or .doc file."""
-    import docx
-
-    try:
-        doc = docx.Document(str(path))
-        return "\n".join(p.text for p in doc.paragraphs)
-    except Exception:
-        pass
-
-    # Fallback for old .doc format — use antiword
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["/root/bin/antiword", str(path)],
-            capture_output=True, text=True, timeout=30,
-        )
-        if result.returncode == 0:
-            return result.stdout
-    except Exception:
-        pass
-
-    return ""
-
-
-
-def _extract_xlsx(path: Path) -> str:
-    """Extract text from an .xlsx file — reads all cell values."""
-    import openpyxl
-
-    wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
-    lines: list[str] = []
-    for sheet in wb.worksheets:
-        for row in sheet.iter_rows(values_only=True):
-            cells = [str(c) for c in row if c is not None]
-            if cells:
-                lines.append(" | ".join(cells))
-    wb.close()
-    return "\n".join(lines)
+# Text extraction functions moved to app.utils.file_processing
+# Re-exported here for backward compatibility in ingest pipeline
+_SUPPORTED_EXTENSIONS = SUPPORTED_DOCUMENT_EXTENSIONS
+_extract_text = extract_text_from_file
 
 
 # ── Ingestion ───────────────────────────────────────────────────────────

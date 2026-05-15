@@ -5,10 +5,13 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from prometheus_fastapi_instrumentator import Instrumentator
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 import sentry_sdk
@@ -189,6 +192,11 @@ else:
     )
 
 app.include_router(v1_router, prefix="/api/v1")
+
+# Serve uploaded files (images, audio) for chat attachments
+_uploads_dir = Path(settings.upload_storage_path)
+_uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
 
 # Prometheus metrics
 Instrumentator().instrument(app).expose(app)

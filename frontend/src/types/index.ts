@@ -53,7 +53,6 @@ export interface LLMConfig {
   ollama_base_url: string;
   ollama_model: string;
   ollama_embed_model: string;
-  deepseek_api_key: string;
   deepseek_api_base: string;
   deepseek_model: string;
   llamacpp_base_url: string;
@@ -84,7 +83,6 @@ export interface UnifiedConfig {
   ollama_base_url: string;
   ollama_model: string;
   ollama_embed_model: string;
-  deepseek_api_key: string;
   deepseek_api_base: string;
   deepseek_model: string;
   llamacpp_base_url: string;

@@ -1,4 +1,5 @@
 # models
+from app.models.attachment import Attachment
 from app.models.user import Base, User, Role
 from app.models.qa import QaHistory
 from app.models.audit import AuditLog

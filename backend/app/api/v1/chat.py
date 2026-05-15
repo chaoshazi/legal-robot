@@ -27,16 +27,19 @@ from app.agent.agent import build_agent, DEFAULT_SYSTEM_PROMPT
 from app.agent.cache import SemanticCache
 from app.agent.config import get_agent_config
 from app.agent.registry import get_registry
+from pathlib import Path
+
 from app.core.database import async_session, get_db
 from app.core.langfuse import trace_agent_call
 from app.middleware.disclaimer import add_disclaimer
 from app.rag.retriever import async_get_retriever
+from app.models.attachment import Attachment
 from app.models.consultation import Consultation
 from app.models.message import Message
 from app.models.session import Session
 from app.models.user import User
 from app.rag.embeddings import get_embeddings
-from app.schemas.chat import CreateSessionRequest, MessageInfo, RenameSessionRequest, SendMessageRequest, SessionInfo
+from app.schemas.chat import CreateSessionRequest, MessageInfo, RenameSessionRequest, SendMessageRequest, SessionInfo, AttachmentInfo
 from app.schemas.common import ApiResponse
 
 router = APIRouter()
@@ -118,7 +121,14 @@ async def list_messages(
     result = await db.execute(
         select(Message).where(Message.session_id == session_id).order_by(Message.created_at)
     )
-    return ApiResponse(data=[_message_info(m) for m in result.scalars().all()])
+    messages = result.scalars().all()
+    result_data = []
+    for m in messages:
+        info = _message_info(m)
+        # Attachments are not re-loaded from history for token efficiency,
+        # but the IDs are stored for reference
+        result_data.append(info)
+    return ApiResponse(data=result_data)
 
 
 @router.delete("/sessions/{session_id}")
@@ -250,7 +260,7 @@ async def ask(
     db: AsyncSession = Depends(get_db),
 ):
     session = await _get_session(db, req.session_id, current_user.id)
-    await _save_user_message(db, session.id, req.content)
+    await _save_user_message(db, session.id, req.content, attachment_ids=req.attachment_ids)
 
     cfg = get_agent_config()
     cacheable = _is_cacheable(cfg)
@@ -324,6 +334,25 @@ async def ask(
         messages.append(SystemMessage(content="知识库检索结果为空，未找到与用户问题相关的法律条文。"))
     if web_context:
         messages.append(SystemMessage(content=f"以下是联网搜索到的信息：\n\n{web_context}"))
+
+    # Attachment context injection
+    if req.attachment_ids:
+        attachment_texts = []
+        for aid in req.attachment_ids:
+            result = await db.execute(
+                select(Attachment).where(Attachment.id == aid, Attachment.user_id == current_user.id)
+            )
+            att = result.scalar_one_or_none()
+            if att and att.status == "ready":
+                text = att.extracted_text or att.transcription or ""
+                if text.strip():
+                    attachment_texts.append(text)
+        if attachment_texts:
+            messages.append(SystemMessage(
+                content=f"用户上传了文件，以下是通过OCR/文字提取得到的内容，请据此回答：\n\n"
+                        + "\n\n---\n\n".join(attachment_texts)
+            ))
+
     messages.append(HumanMessage(content=req.content))
 
     inputs = {"messages": messages}
@@ -367,7 +396,7 @@ async def chat_stream(
     db: AsyncSession = Depends(get_db),
 ):
     session = await _get_session(db, req.session_id, current_user.id)
-    await _save_user_message(db, session.id, req.content)
+    await _save_user_message(db, session.id, req.content, attachment_ids=req.attachment_ids)
 
     cfg = get_agent_config()
     cacheable = _is_cacheable(cfg)
@@ -404,6 +433,21 @@ async def chat_stream(
     agent = build_agent(tools, system_prompt)
 
     history = await _load_history(session, db)
+
+    # Load attachment context before releasing the DB session
+    attachment_contexts: list[str] = []
+    if req.attachment_ids:
+        result = await db.execute(
+            select(Attachment).where(
+                Attachment.id.in_([uuid.UUID(aid) for aid in req.attachment_ids]),
+                Attachment.user_id == current_user.id,
+            )
+        )
+        for att in result.scalars().all():
+            if att.status == "ready":
+                text = att.extracted_text or att.transcription or ""
+                if text.strip():
+                    attachment_contexts.append(text)
 
     # Release the DB session before streaming so the connection pool is not
     # exhausted during long LLM generations.
@@ -458,6 +502,11 @@ async def chat_stream(
                 messages.append(SystemMessage(content="知识库检索结果为空，未找到与用户问题相关的法律条文。"))
             if web_context:
                 messages.append(SystemMessage(content=f"以下是联网搜索到的信息：\n\n{web_context}"))
+            if attachment_contexts:
+                messages.append(SystemMessage(
+                    content=f"用户上传了文件，以下是通过OCR/文字提取得到的内容，请据此回答：\n\n"
+                            + "\n\n---\n\n".join(attachment_contexts)
+                ))
             messages.append(HumanMessage(content=req.content))
             inputs = {"messages": messages}
 
@@ -576,8 +625,19 @@ async def _get_session(db: AsyncSession, session_id: str, user_id: uuid.UUID) ->
     return session
 
 
-async def _save_user_message(db: AsyncSession, session_id: uuid.UUID, content: str):
-    msg = Message(id=uuid.uuid4(), session_id=session_id, role="user", content=content)
+async def _save_user_message(
+    db: AsyncSession,
+    session_id: uuid.UUID,
+    content: str,
+    attachment_ids: list[str] | None = None,
+):
+    msg = Message(
+        id=uuid.uuid4(),
+        session_id=session_id,
+        role="user",
+        content=content,
+        attachment_ids=attachment_ids or [],
+    )
     db.add(msg)
     await db.commit()
 
@@ -631,6 +691,39 @@ def _session_info(s: Session) -> SessionInfo:
         created_at=s.created_at.isoformat() if s.created_at else "",
         updated_at=s.updated_at.isoformat() if s.updated_at else "",
     )
+
+
+async def _load_attachments(db: AsyncSession, attachment_ids: list[str] | None) -> list[AttachmentInfo]:
+    """Load attachment info for a list of attachment IDs."""
+    if not attachment_ids:
+        return []
+    result = await db.execute(
+        select(Attachment).where(Attachment.id.in_([uuid.UUID(aid) for aid in attachment_ids]))
+    )
+    atts = result.scalars().all()
+    from app.core.config import get_settings
+    uploads_parent = Path(get_settings().upload_storage_path).parent
+    result_list = []
+    for a in atts:
+        url = ""
+        try:
+            rel = Path(a.file_path).relative_to(uploads_parent)
+            url = f"/{rel}"
+        except ValueError:
+            pass
+        result_list.append(AttachmentInfo(
+            id=str(a.id),
+            file_type=a.file_type,
+            filename=a.filename,
+            file_size=a.file_size,
+            mime_type=a.mime_type,
+            extracted_text=a.extracted_text,
+            transcription=a.transcription,
+            status=a.status,
+            url=url,
+            created_at=a.created_at.isoformat() if a.created_at else "",
+        ))
+    return result_list
 
 
 def _message_info(m: Message) -> MessageInfo:

@@ -172,6 +172,8 @@ async def update_llm_settings(
     data = body.model_dump()
     for key, value in data.items():
         if key in LLM_CONFIG_KEYS:
+            if key == "deepseek_api_key" and not value:
+                continue
             await _upsert(db, key, str(value) if value is not None else "")
     await db.commit()
     await sync_cache_from_db(db)
@@ -356,6 +358,8 @@ async def update_unified_config(
 
     for key, value in data.items():
         if key in LLM_CONFIG_KEYS:
+            if key == "deepseek_api_key" and not value:
+                continue
             await _upsert(db, key, str(value) if value is not None else "")
         elif key == "system_prompt":
             await _upsert(db, key, value)

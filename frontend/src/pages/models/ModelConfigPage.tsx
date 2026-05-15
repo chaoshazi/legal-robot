@@ -225,32 +225,26 @@ export function ModelConfigPage() {
             <Space direction="vertical" style={{ width: "100%" }}>
               <Space>
                 <div>
-                  <div style={labelStyle}>API Key</div>
-                  <Input.Password
-                    style={{ width: 320 }}
-                    value={config.deepseek_api_key}
-                    onChange={(e) => update({ deepseek_api_key: e.target.value })}
-                    placeholder="sk-..."
-                  />
-                </div>
-                <div>
                   <div style={labelStyle}>模型</div>
                   <Input
-                    style={{ width: 200 }}
+                    style={{ width: 240 }}
                     value={config.deepseek_model}
                     onChange={(e) => update({ deepseek_model: e.target.value })}
                     placeholder="deepseek-chat"
                   />
                 </div>
+                <div>
+                  <div style={labelStyle}>API 地址</div>
+                  <Input
+                    style={{ width: 320 }}
+                    value={config.deepseek_api_base}
+                    onChange={(e) => update({ deepseek_api_base: e.target.value })}
+                    placeholder="https://api.deepseek.com/v1"
+                  />
+                </div>
               </Space>
-              <div>
-                <div style={labelStyle}>API 地址</div>
-                <Input
-                  style={{ width: 520 }}
-                  value={config.deepseek_api_base}
-                  onChange={(e) => update({ deepseek_api_base: e.target.value })}
-                  placeholder="https://api.deepseek.com/v1"
-                />
+              <div style={{ fontSize: 12, color: "#999" }}>
+                API Key 已通过后端环境变量配置，无需在页面中填写。
               </div>
             </Space>
           )}
