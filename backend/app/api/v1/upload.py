@@ -1,5 +1,6 @@
 """Upload API — file upload, ASR transcription, and download for chat attachments."""
 
+import asyncio
 import uuid
 from pathlib import Path
 
@@ -23,6 +24,46 @@ from app.utils.file_processing import (
 
 router = APIRouter()
 settings = get_settings()
+
+# Lazy-loaded WhisperModel singleton — loaded once, reused for all transcriptions
+_whisper_model = None
+
+
+async def _get_whisper_model_async():
+    """Load WhisperModel in a thread pool (non-blocking)."""
+    global _whisper_model
+    if _whisper_model is not None:
+        return _whisper_model
+
+    loop = asyncio.get_running_loop()
+
+    def _load():
+        global _whisper_model
+        if _whisper_model is not None:
+            return _whisper_model
+        from faster_whisper import WhisperModel
+
+        _whisper_model = WhisperModel(
+            settings.asr_model_size,
+            device="cpu",
+            compute_type="int8",
+            download_root=None,
+        )
+        return _whisper_model
+
+    return await loop.run_in_executor(None, _load)
+
+
+async def _transcribe_audio(file_path: str) -> str:
+    """Run faster-whisper transcription in a thread pool."""
+    model = await _get_whisper_model_async()
+    loop = asyncio.get_running_loop()
+
+    def _run():
+        segments, _info = model.transcribe(file_path, language="zh")
+        return " ".join(seg.text for seg in segments)
+
+    return await loop.run_in_executor(None, _run)
 
 
 def _get_allowed_types() -> set[str]:
@@ -176,22 +217,12 @@ async def transcribe_audio(
     if attachment.status == "ready" and attachment.transcription:
         return ApiResponse(data={"transcription": attachment.transcription, "attachment_id": attachment_id})
 
-    # Run faster-whisper
+    # Run faster-whisper (model is cached; transcription runs in thread pool)
     attachment.status = "processing"
     await db.commit()
 
     try:
-        from faster_whisper import WhisperModel
-
-        model = WhisperModel(
-            settings.asr_model_size,
-            device="cpu",
-            compute_type="int8",
-            download_root=None,
-        )
-        segments, info = model.transcribe(str(attachment.file_path), language="zh")
-
-        text = " ".join(seg.text for seg in segments)
+        text = await _transcribe_audio(str(attachment.file_path))
 
         attachment.transcription = text
         attachment.status = "ready"

@@ -8,7 +8,6 @@ Input / output format::
     answer = result["messages"][-1].content
 """
 
-import asyncio
 import json
 import re
 import uuid
@@ -32,7 +31,6 @@ from pathlib import Path
 from app.core.database import async_session, get_db
 from app.core.langfuse import trace_agent_call
 from app.middleware.disclaimer import add_disclaimer
-from app.rag.retriever import async_get_retriever
 from app.models.attachment import Attachment
 from app.models.consultation import Consultation
 from app.models.message import Message
@@ -175,56 +173,6 @@ def _extract_answer(messages: list) -> str:
     return ""
 
 
-# ── Pre-retrieval: always search KB before each turn ─────────────────────
-
-_kb_available: bool | None = None
-
-
-async def _check_kb() -> bool:
-    """Quick check whether the knowledge base has data.
-
-    Once confirmed positive, caches permanently (no more Qdrant pings).
-    A negative or errored result is NOT cached so transient Qdrant blips
-    don't permanently disable knowledge base access.
-    """
-    global _kb_available
-    if _kb_available:               # True — definitely has data
-        return True
-    # None or False — re-check Qdrant
-    try:
-        from qdrant_client import QdrantClient
-        from app.core.config import get_settings
-        s = get_settings()
-        client = QdrantClient(url=s.qdrant_url, timeout=2.0)
-        loop = asyncio.get_running_loop()
-        count = await loop.run_in_executor(None, lambda: client.count(collection_name=s.qdrant_collection))
-        _kb_available = count.count > 0
-    except Exception:
-        _kb_available = None  # re-check next time
-        return False
-    return _kb_available
-
-
-async def _retrieve_context(query: str, doc_ids: list[str] | None = None) -> str | None:
-    """Search knowledge base and return formatted context, or None if unavailable/empty."""
-    if not await _check_kb():
-        return None
-    try:
-        retriever = await async_get_retriever()
-        docs = await asyncio.wait_for(retriever.ainvoke(query, doc_ids=doc_ids), timeout=10.0)
-        if not docs:
-            return None
-        parts = []
-        for i, d in enumerate(docs, 1):
-            source = d.metadata.get("source", "法律知识库")
-            parts.append(f"[{i}] 来自《{source}》\n{d.page_content}")
-        return "\n\n".join(parts)
-    except Exception:
-        import logging
-        logging.getLogger("chat.retrieve").exception("KB search failed")
-        return None
-
-
 # ── Fast-path: skip LLM for trivial queries ──────────────────────────────
 
 _FAST_PATH_PATTERNS: list[tuple[re.Pattern, str, str]] = [
@@ -240,10 +188,20 @@ _FAST_PATH_PATTERNS: list[tuple[re.Pattern, str, str]] = [
 def _try_fast_path(query: str) -> str | None:
     """Handle trivial queries without invoking the LLM.
 
-    Returns the answer string if matched, or None to fall through to the agent.
+    Only fires when the matched portion covers most of the query —
+    compound queries like "北京今天几号 什么天气" fall through to the agent
+    so both date AND weather (via web search) are answered.
     """
     for pattern, _, tz in _FAST_PATH_PATTERNS:
-        if pattern.search(query):
+        m = pattern.search(query)
+        if m:
+            # If there's substantial content outside the match, it's a compound
+            # query — let the agent handle it with multi-tool chaining.
+            before = query[:m.start()]
+            after = query[m.end():]
+            remainder = (before + after).strip()
+            if len(remainder) > 3:
+                return None
             from app.agent.tools import get_current_datetime
             result = get_current_datetime.invoke({"timezone": tz})
             return result if isinstance(result, str) else str(result)
@@ -296,12 +254,10 @@ async def ask(
             "sources": [],
         })
 
-    # Build agent with tools from registry
+    # Build agent with tools from registry — tool list comes purely from config
     knowledge_enabled = bool(cfg.get("active_knowledge_ids"))
     registry = get_registry()
     active_ids = cfg.get("active_tool_ids", [])
-    if not req.enable_web_search:
-        active_ids = [id for id in active_ids if id != "builtin:web_search"]
     tools = registry.get_agent_tools(
         active_tool_ids=active_ids,
         active_mcp_ids=cfg.get("active_mcp_ids"),
@@ -312,30 +268,7 @@ async def ask(
 
     history = await _load_history(session, db)
 
-    # Pre-retrieval: inject KB context so the agent can't skip searching
-    if knowledge_enabled:
-        kb_context = await _retrieve_context(req.content, doc_ids=cfg.get("active_knowledge_ids"))
-    else:
-        kb_context = None
-
-    # Web search pre-retrieval: runs automatically when toggle is on
-    web_context = None
-    if req.enable_web_search:
-        try:
-            from app.agent.tools import web_search as do_web_search
-            web_context = await do_web_search.ainvoke({"query": req.content})
-        except Exception as e:
-            web_context = f"[联网搜索失败: {e}]"
-
     messages: list = [*history]
-    if kb_context:
-        messages.append(SystemMessage(content=f"以下是知识库中检索到的相关法律条文，请基于这些内容回答用户问题：\n\n{kb_context}"))
-    elif knowledge_enabled:
-        messages.append(SystemMessage(content="知识库检索结果为空，未找到与用户问题相关的法律条文。"))
-    if web_context:
-        messages.append(SystemMessage(content=f"以下是联网搜索到的信息：\n\n{web_context}"))
-
-    # Attachment context injection
     if req.attachment_ids:
         attachment_texts = []
         for aid in req.attachment_ids:
@@ -417,13 +350,10 @@ async def chat_stream(
             return StreamingResponse(from_cache(), media_type="text/event-stream")
 
     # Build agent with tools from registry.
-    # Knowledge base tool is excluded because pre-retrieval below already
-    # injects KB context as a SystemMessage.
+    # The LLM decides when to call each tool via function calling.
     knowledge_enabled = bool(cfg.get("active_knowledge_ids"))
     registry = get_registry()
     active_ids = cfg.get("active_tool_ids", [])
-    if not req.enable_web_search:
-        active_ids = [id for id in active_ids if id != "builtin:web_search"]
     tools = registry.get_agent_tools(
         active_tool_ids=active_ids,
         active_mcp_ids=cfg.get("active_mcp_ids"),
@@ -476,32 +406,8 @@ async def chat_stream(
                 yield f"data: {json.dumps({'done': True, 'message_id': str(msg.id), 'consultation_id': str(consultation.id), 'status': consultation.status, 'sources': []})}\n\n"
                 return
 
-            # Step 1 — Search knowledge base (visible in frontend as a tool call)
-            kb_context = None
-            if knowledge_enabled:
-                yield f"data: {json.dumps({'tool_start': 'search_knowledge_base', 'done': False})}\n\n"
-                kb_context = await _retrieve_context(req.content, doc_ids=cfg.get("active_knowledge_ids"))
-                yield f"data: {json.dumps({'tool_end': 'search_knowledge_base', 'done': False})}\n\n"
-
-            # Step 1.5 — Web search pre-retrieval (visible in frontend as a tool call)
-            web_context = None
-            if req.enable_web_search:
-                yield f"data: {json.dumps({'tool_start': 'web_search', 'done': False})}\n\n"
-                try:
-                    from app.agent.tools import web_search as do_web_search
-                    web_context = await do_web_search.ainvoke({"query": req.content})
-                except Exception as e:
-                    web_context = f"[联网搜索失败: {e}]"
-                yield f"data: {json.dumps({'tool_end': 'web_search', 'done': False})}\n\n"
-
             # Step 2 — Build messages with context
             messages = [*history]
-            if kb_context:
-                messages.append(SystemMessage(content=f"以下是知识库中检索到的相关法律条文，请基于这些内容回答用户问题：\n\n{kb_context}"))
-            elif knowledge_enabled:
-                messages.append(SystemMessage(content="知识库检索结果为空，未找到与用户问题相关的法律条文。"))
-            if web_context:
-                messages.append(SystemMessage(content=f"以下是联网搜索到的信息：\n\n{web_context}"))
             if attachment_contexts:
                 messages.append(SystemMessage(
                     content=f"用户上传了文件，以下是通过OCR/文字提取得到的内容，请据此回答：\n\n"

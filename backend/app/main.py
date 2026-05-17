@@ -15,7 +15,18 @@ from fastapi.staticfiles import StaticFiles
 from prometheus_fastapi_instrumentator import Instrumentator
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 import sentry_sdk
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import select
+
+from app.core.metrics import (
+    legal_bot_audit_log_cleanup_total,
+    legal_bot_errors_total,
+    legal_bot_requests_total,
+)
+from app.core.rate_limit import limiter
+from app.core.redis_client import get_redis
 
 from app.api.v1 import router as v1_router
 from app.core.config import get_settings
@@ -168,12 +179,38 @@ async def lifespan(app: FastAPI):
         )
     await _sync_caches()
     await _start_mcp()
+
+    # Redis connection
+    await get_redis().connect(settings.redis_url)
+
+    # Audit log cleanup — delete entries older than 180 days
+    try:
+        from datetime import datetime, timedelta, timezone
+        from sqlalchemy import delete
+
+        from app.core.database import async_session
+        from app.models.audit import AuditLog
+
+        async with async_session() as db:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=180)
+            result = await db.execute(delete(AuditLog).where(AuditLog.created_at < cutoff))
+            await db.commit()
+            deleted_count = result.rowcount if hasattr(result, "rowcount") else 0
+            legal_bot_audit_log_cleanup_total.labels(status="success").inc()
+            if deleted_count:
+                logger.info("Audit log cleanup: deleted %d records older than 180 days", deleted_count)
+    except Exception as e:
+        legal_bot_audit_log_cleanup_total.labels(status="error").inc()
+        logger.warning("Audit log cleanup failed: %s", e)
+
     yield
     await _stop_mcp()
+    await get_redis().disconnect()
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan, redirect_slashes=False)
 
+# CORS — restrict origins in production
 if settings.app_env == "development":
     app.add_middleware(
         CORSMiddleware,
@@ -183,13 +220,60 @@ if settings.app_env == "development":
         allow_headers=["*"],
     )
 else:
+    origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()] or ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Restrict to specific domain in production
+        allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+# Rate limiting (disabled in test)
+if settings.app_env != "test" and settings.rate_limit_per_minute > 0:
+    # Don't set default_limits — only explicitly decorated routes are rate-limited
+    # (chat/ask, chat/stream already have @limiter.limit decorators).
+    # Setting default_limits would also affect /metrics, /health, etc.
+    limiter.default_limits = []
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
+
+# Request body size limit enforcement
+if settings.max_request_size_mb > 0:
+    from starlette.middleware.base import BaseHTTPMiddleware
+
+    class _BodySizeMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            if request.url.path.startswith("/api/v1/chat/upload"):
+                return await call_next(request)
+            content_length = request.headers.get("content-length")
+            if content_length and int(content_length) > settings.max_request_size_mb * 1024 * 1024:
+                return JSONResponse(
+                    status_code=413,
+                    content={"code": 2001, "message": "Request too large", "data": None},
+                )
+            return await call_next(request)
+
+    app.add_middleware(_BodySizeMiddleware)
+
+# Sensitive content filter on chat endpoints
+from app.middleware.sensitive import contains_sensitive as _check_sensitive
+
+class _SensitiveContentMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Chat endpoints should NOT be filtered — legal questions naturally
+        # contain terms like 诈骗, 赌博, 高利贷, etc. Only protect auth.
+        if request.method in ("POST", "PUT") and request.url.path.startswith("/api/v1/auth"):
+            body = await request.body()
+            if body and _check_sensitive(body.decode("utf-8", errors="ignore")):
+                return JSONResponse(
+                    status_code=400,
+                    content={"code": 4002, "message": "Sensitive content detected", "data": None},
+                )
+        return await call_next(request)
+
+app.add_middleware(_SensitiveContentMiddleware)
 
 app.include_router(v1_router, prefix="/api/v1")
 
@@ -198,13 +282,21 @@ _uploads_dir = Path(settings.upload_storage_path)
 _uploads_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
 
-# Prometheus metrics
-Instrumentator().instrument(app).expose(app)
+# Prometheus metrics — exclude health/readyz endpoints to reduce noise
+Instrumentator(
+    should_group_status_codes=False,
+    should_ignore_untemplated=True,
+).instrument(app).expose(app)
 
 
 # Unified error handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    if request.url.path.startswith("/api/v1/chat"):
+        legal_bot_errors_total.labels(
+            endpoint=request.url.path,
+            error_type=exc.__class__.__name__,
+        ).inc()
     if isinstance(exc, HTTPException):
         return JSONResponse(
             status_code=exc.status_code,
@@ -219,3 +311,24 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/healthz")
+async def liveness():
+    """Kubernetes liveness probe — process is alive."""
+    return {"status": "alive"}
+
+
+@app.get("/readyz")
+async def readiness():
+    """Kubernetes readiness probe — dependencies available."""
+    from sqlalchemy import text
+    try:
+        async with async_session() as db:
+            await db.execute(text("SELECT 1"))
+    except Exception:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unavailable", "reason": "database"},
+        )
+    return {"status": "ready", "checks": ["database"]}

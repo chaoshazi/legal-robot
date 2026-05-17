@@ -1,0 +1,127 @@
+# Backend Deployment — auto-scaled by HPA
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: legal-bot-backend
+  labels:
+    app: legal-bot
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: legal-bot
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: legal-bot
+        component: backend
+    spec:
+      containers:
+        - name: backend
+          image: legal-bot-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: legal-bot-config
+            - secretRef:
+                name: legal-bot-secret
+          env:
+            - name: APP_ENV
+              value: "production"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+---
+# Backend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: legal-bot-backend
+  labels:
+    app: legal-bot
+    component: backend
+spec:
+  selector:
+    app: legal-bot
+    component: backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
+---
+# Frontend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: legal-bot-frontend
+  labels:
+    app: legal-bot
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: legal-bot
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: legal-bot
+        component: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: legal-bot-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+---
+# Frontend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: legal-bot-frontend
+  labels:
+    app: legal-bot
+    component: frontend
+spec:
+  selector:
+    app: legal-bot
+    component: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  type: ClusterIP

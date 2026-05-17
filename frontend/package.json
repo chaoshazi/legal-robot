@@ -17,7 +17,8 @@
     "react-markdown": "^10.1.0",
     "react-router-dom": "^6.28.0",
     "remark-gfm": "^4.0.1",
-    "zustand": "^5.0.0"
+    "zustand": "^5.0.0",
+    "@sentry/react": "^8.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

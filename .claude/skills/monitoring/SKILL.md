@@ -5,11 +5,11 @@ description: 监控与可观测性配置
 
 ## 监控体系
 
-### LangSmith（Agent 追踪）
-- 自动追踪 Agent 执行链
+### LangFuse（Agent 追踪）
+- 自动追踪 Agent 执行链（标准+流式）
 - 记录 Token 消耗和延迟
-- 调试工具调用链路
-- 配置：设置 `LANGSMITH_API_KEY` 环境变量
+- 评分与评估集成
+- 配置：设置 `LANGFUSE_SECRET_KEY` 环境变量
 
 ### Prometheus + Grafana（指标监控）
 - 自定义指标：

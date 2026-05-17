@@ -10,13 +10,18 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ### 开发
 ```bash
-# 启动基础设施（PostgreSQL + Qdrant）
-docker compose up -d postgres qdrant
+# 一键启动所有基础设施（Docker），然后按提示在终端分别启动前后端
+bash scripts/make.sh dev
 
-# 启动后端（热重载）
-cd backend && uvicorn app.main:app --reload --port 8000
+# 或手动操作：
+# 1. 启动基础设施（PostgreSQL + Qdrant 集群 + Redis + 监控）
+docker compose up -d postgres qdrant-node-0 qdrant-node-1 qdrant-node-2 redis \
+  prometheus grafana loki promtail langfuse
 
-# 启动前端
+# 2. 启动后端（热重载，端口 8888）
+cd backend && uvicorn app.main:app --reload --port 8888
+
+# 3. 启动前端
 cd frontend && npm run dev
 ```
 

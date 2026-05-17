@@ -1,0 +1,22 @@
+# ConfigMap — non-sensitive environment variables
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: legal-bot-config
+  labels:
+    app: legal-bot
+data:
+  APP_NAME: "legal-consult-bot"
+  APP_ENV: "production"
+  APP_DEBUG: "false"
+  POSTGRES_HOST: "legal-bot-postgres"
+  POSTGRES_PORT: "5432"
+  QDRANT_HOST: "legal-bot-qdrant"
+  QDRANT_PORT: "6333"
+  REDIS_URL: "redis://legal-bot-redis:6379/0"
+  CORS_ORIGINS: "https://your-domain.com"
+  UVICORN_WORKERS: "4"
+  DB_POOL_SIZE: "10"
+  DB_MAX_OVERFLOW: "15"
+  RATE_LIMIT_PER_MINUTE: "60"
+  MAX_REQUEST_SIZE_MB: "5"

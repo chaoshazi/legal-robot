@@ -55,6 +55,15 @@ class Settings(BaseSettings):
     langfuse_host: str = "http://localhost:3000"
 
     sentry_dsn: str = ""
+    redis_url: str = "redis://localhost:6380/0"
+    db_pool_size: int = 20
+    db_max_overflow: int = 30
+
+    # Security
+    cors_origins: str = "http://localhost:5173"
+    max_request_size_mb: int = 5
+    rate_limit_per_minute: int = 30
+    uvicorn_workers: int = 4
 
     # Upload / attachment settings
     upload_max_size_mb: int = 20

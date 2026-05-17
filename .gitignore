@@ -45,3 +45,4 @@ backend/.vite/
 backend/.claude/
 backend/=*
 frontend/.vite/
+nginx/ssl/

@@ -37,6 +37,9 @@ def _ensure_collection(client: QdrantClient):
         client.create_collection(
             collection_name=settings.qdrant_collection,
             vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+            replication_factor=2,
+            write_consistency_factor=2,
+            shard_number=3,
         )
 
 

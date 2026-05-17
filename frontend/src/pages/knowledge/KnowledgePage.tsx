@@ -140,11 +140,21 @@ export function KnowledgePage() {
     failed: "失败",
   };
 
+  const handleViewFile = (docId: string) => {
+    const token = localStorage.getItem("access_token");
+    window.open(`/api/v1/knowledge/documents/${docId}/download?token=${token}`, "_blank");
+  };
+
   const columns = [
     {
       title: "文件名",
       dataIndex: "filename",
       key: "filename",
+      render: (name: string, record: Document) => (
+        <a onClick={() => handleViewFile(record.id)} style={{ cursor: "pointer", color: "#1677ff" }}>
+          {name}
+        </a>
+      ),
     },
     {
       title: "大小",

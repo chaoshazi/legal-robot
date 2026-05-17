@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: "Legal Bot Dashboards"
+    orgId: 1
+    folder: "法律咨询机器人"
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards

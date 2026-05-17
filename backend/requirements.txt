@@ -31,9 +31,13 @@ qdrant-client>=1.13
 sentry-sdk[fastapi]>=2.22
 prometheus-fastapi-instrumentator>=7.0
 
+# Security
+slowapi>=0.1.9
+
 # Utils
 httpx>=0.28
 python-dotenv>=1.0
+redis[hiredis]>=5.0
 
 # Multimodal
 faster-whisper>=1.2

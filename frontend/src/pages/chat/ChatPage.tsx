@@ -34,7 +34,7 @@ import {
 import { Upload } from "antd";
 import type { UploadFile } from "antd";
 import { chatApi } from "../../api/chat";
-import { getUnifiedConfig } from "../../api/settings";
+import { getUnifiedConfig, updateUnifiedConfig } from "../../api/settings";
 import { useAuthStore } from "../../stores/authStore";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { VoiceRecorder } from "../../components/chat/VoiceRecorder";
@@ -235,7 +235,12 @@ export function ChatPage() {
         signal: abortRef.current.signal,
       });
 
-      if (!response.ok) throw new Error("Stream request failed");
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        let detail = "Stream request failed";
+        try { const j = JSON.parse(body); if (j.message) detail = j.message; } catch { if (body) detail = body; }
+        throw new Error(detail);
+      }
 
       const reader = response.body!.getReader();
       const decoder = new TextDecoder();
@@ -425,7 +430,20 @@ export function ChatPage() {
           </Typography.Text>
           <Switch
             checked={webSearchEnabled}
-            onChange={setWebSearchEnabled}
+            onChange={async (checked) => {
+              setWebSearchEnabled(checked);
+              try {
+                const res = await getUnifiedConfig();
+                if (res.data) {
+                  const ids = checked
+                    ? [...(res.data.active_tool_ids || []), "builtin:web_search"]
+                    : (res.data.active_tool_ids || []).filter((id: string) => id !== "builtin:web_search");
+                  await updateUnifiedConfig({ ...res.data, active_tool_ids: ids });
+                }
+              } catch {
+                message.error("更新配置失败");
+              }
+            }}
             checkedChildren="开"
             unCheckedChildren="关"
             size="small"

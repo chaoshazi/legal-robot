@@ -12,10 +12,7 @@ common:
   replication_factor: 1
   ring:
     kvstore:
-      store: memberlist
-
-memberlist:
-  join_members: []
+      store: inmemory
 
 schema_config:
   configs:

@@ -168,6 +168,15 @@ class HybridRetriever:
         if qdrant_filter is not None:
             search_kw["filter"] = qdrant_filter
         docs = await self._store.asimilarity_search(query, **search_kw)
+
+        # Fallback: if doc_ids filter matched nothing, the Qdrant points likely
+        # lack the "doc_id" field (legacy data).  Retry by source filename.
+        if not docs and qdrant_filter is not None:
+            source_filter = await self._build_source_filter(doc_ids)
+            if source_filter:
+                search_kw["filter"] = source_filter
+                docs = await self._store.asimilarity_search(query, **search_kw)
+
         for d in docs:
             seen.add(d.page_content)
             results.append(d)
@@ -183,7 +192,41 @@ class HybridRetriever:
                         seen.add(d.page_content)
                         results.append(d)
 
+        # Keyword fallback: same as above — retry by source if doc_id filter matched nothing
+        if not results and qdrant_filter is not None:
+            source_filter = await self._build_source_filter(doc_ids)
+            if source_filter:
+                for ref in _extract_article_numbers(query):
+                    for token in _article_to_search_tokens(ref):
+                        for d in self._keyword_search(token, filter_extra=source_filter):
+                            if d.page_content not in seen:
+                                seen.add(d.page_content)
+                                results.append(d)
+
         return results
+
+    async def _build_source_filter(self, doc_ids: list[str] | None):
+        """Fallback: build a filter by ``source`` filename for legacy data that
+        lacks the ``doc_id`` metadata field."""
+        from qdrant_client.http.models import FieldCondition, Filter, MatchValue
+        from app.core.database import async_session
+        from app.models.knowledge import KnowledgeDocument
+        from sqlalchemy import select
+
+        try:
+            async with async_session() as db:
+                result = await db.execute(
+                    select(KnowledgeDocument).where(KnowledgeDocument.id.in_(doc_ids))
+                )
+                filenames = [d.filename for d in result.scalars().all()]
+        except Exception:
+            return None
+
+        if not filenames:
+            return None
+        return Filter(
+            should=[FieldCondition(key="metadata.source", match=MatchValue(value=f)) for f in filenames],
+        )
 
     def _keyword_search(self, token: str, filter_extra: Any | None = None) -> list[Document]:
         """Scroll points whose ``page_content`` contains *token*."""

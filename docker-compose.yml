@@ -1,5 +1,14 @@
 # Development environment. For production, use docker-compose.prod.yml.
+
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
   postgres:
     image: postgres:15-alpine
     environment:
@@ -17,28 +26,99 @@ services:
       retries: 5
     restart: unless-stopped
 
-  qdrant:
+  # Qdrant 3-node cluster — node-0 exposes ports, node-1/2 join via bootstrap
+  qdrant-node-0:
     image: qdrant/qdrant:v1.13
     ports:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - qdrant_data:/qdrant/storage
+      - qdrant_data_0:/qdrant/storage
+    environment:
+      QDRANT__CLUSTER__ENABLED: "true"
+      QDRANT__CLUSTER__NODE_NAME: "node-0"
+      QDRANT__CLUSTER__GRPC__PORT: "6334"
+      QDRANT__CLUSTER__URI: "http://qdrant-node-0:6335"
+      QDRANT__CLUSTER__REPLICATION_FACTOR: "2"
+      QDRANT__CLUSTER__WRITE_CONSISTENCY_FACTOR: "2"
+      QDRANT__CLUSTER__READ_CONSISTENCY_FACTOR: "1"
+      QDRANT__LOG_LEVEL: info
     restart: unless-stopped
+    command: ["sh", "-c", "ulimit -n 10000 && ./qdrant --uri http://qdrant-node-0:6335"]
+
+  qdrant-node-1:
+    image: qdrant/qdrant:v1.13
+    volumes:
+      - qdrant_data_1:/qdrant/storage
+    environment:
+      QDRANT__CLUSTER__ENABLED: "true"
+      QDRANT__CLUSTER__NODE_NAME: "node-1"
+      QDRANT__CLUSTER__GRPC__PORT: "6334"
+      QDRANT__CLUSTER__URI: "http://qdrant-node-1:6335"
+      QDRANT__CLUSTER__REPLICATION_FACTOR: "2"
+      QDRANT__CLUSTER__WRITE_CONSISTENCY_FACTOR: "2"
+      QDRANT__CLUSTER__READ_CONSISTENCY_FACTOR: "1"
+      QDRANT__LOG_LEVEL: info
+    restart: unless-stopped
+    depends_on:
+      qdrant-node-0:
+        condition: service_started
+    command: >
+      sh -c "sleep 5 && ./qdrant --uri http://qdrant-node-1:6335 --bootstrap http://qdrant-node-0:6335"
+
+  qdrant-node-2:
+    image: qdrant/qdrant:v1.13
+    volumes:
+      - qdrant_data_2:/qdrant/storage
+    environment:
+      QDRANT__CLUSTER__ENABLED: "true"
+      QDRANT__CLUSTER__NODE_NAME: "node-2"
+      QDRANT__CLUSTER__GRPC__PORT: "6334"
+      QDRANT__CLUSTER__URI: "http://qdrant-node-2:6335"
+      QDRANT__CLUSTER__REPLICATION_FACTOR: "2"
+      QDRANT__CLUSTER__WRITE_CONSISTENCY_FACTOR: "2"
+      QDRANT__CLUSTER__READ_CONSISTENCY_FACTOR: "1"
+      QDRANT__LOG_LEVEL: info
+    restart: unless-stopped
+    depends_on:
+      qdrant-node-0:
+        condition: service_started
+    command: >
+      sh -c "sleep 5 && ./qdrant --uri http://qdrant-node-2:6335 --bootstrap http://qdrant-node-0:6335"
 
   backend:
     build: ./backend
     env_file: .env
+    environment:
+      QDRANT_HOST: qdrant-node-0
+      POSTGRES_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8888:8000"
     depends_on:
       postgres:
         condition: service_healthy
-      qdrant:
+      qdrant-node-0:
         condition: service_started
     volumes:
       - ./backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+      - "5175:5175"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl:ro
     restart: unless-stopped
 
   prometheus:
@@ -49,6 +129,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -64,6 +145,8 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
     restart: unless-stopped
 
   loki:
@@ -88,16 +171,6 @@ services:
     command: -config.file=/etc/promtail/promtail.yml
     restart: unless-stopped
 
-  nginx:
-    build: ./nginx
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-    restart: unless-stopped
-
   langfuse:
     image: langfuse/langfuse:2
     ports:
@@ -118,7 +191,10 @@ services:
 
 volumes:
   pgdata:
-  qdrant_data:
+  qdrant_data_0:
+  qdrant_data_1:
+  qdrant_data_2:
   prometheus_data:
   grafana_data:
   loki_data:
+  redis_data:

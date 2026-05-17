@@ -1,0 +1,122 @@
+ ▐▛███▜▌   Claude Code v2.1.143
+▝▜█████▛▘  deepseek-v4-flash · API Usage Billing
+  ▘▘ ▝▝    /home/chaoyu/frontend
+
+✻ Conversation compacted (ctrl+o for history)
+
+  ⎿  Referenced file src/pages/chat/ChatPage.tsx
+  ⎿  Referenced file ../backend/app/api/v1/chat.py
+  ⎿  Read ../backend/app/agent/agent.py (134 lines)
+  ⎿  Read ../backend/scripts/restart-backend.sh (32 lines)
+  ⎿  Referenced file ../../../tmp/be.log
+  ⎿  Plan file referenced (~/.claude/plans/scalable-dreaming-sketch.md)
+
+  Read 3 files (ctrl+o to expand)
+
+● Let me check the backend logs and the router registration to trace the 400
+  error.
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Bash(lsof -ti :8888 2>/dev/null && curl -s http://localhost:8888/health
+      2>/dev/null || echo "Backend not running")
+  ⎿  2017449
+     2095107
+     2095217
+     … +6 lines (ctrl+o to expand)
+
+  Read 2 files (ctrl+o to expand)
+
+● 找到根因了。让我检查一下敏感词列表来确认。
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● HTTP 400 的根因找到了。我来解释清楚然后修复。
+
+  根因分析
+
+  backend/app/middleware/sensitive.py 定义了一个敏感词中间件，在 main.py:263-274
+   拦截所有 POST /api/v1/chat/* 请求，检测到敏感词就返回 HTTP 400。
+
+  敏感词列表包含：诈骗、高利贷、赌博、毒品、洗钱、卖淫、走私、非法集资、暴力催收
+  等。
+
+  这是一个法律咨询机器人——用户必然问"我被诈骗了怎么办"、"高利贷可以不还吗"这类问
+  题。关键词过滤直接拦截了这些合法法律咨询，返回 400。前端只看到 response.ok ===
+   false，显示"抱歉，服务异常：Stream request failed"。
+
+  时间线吻合：
+  - 16:53:41 最后成功（问题不含敏感词）
+  - 16:54:00 → 400（用户输入含法律敏感词的问题）
+  - 16:54:13 → 400（再次尝试）
+
+  修复
+
+  1. 后端：敏感中间件跳过 /api/v1/chat 路径（法律咨询必须允许这些词汇）
+  2. 前端：显示服务端真实错误信息，方便未来排查
+
+● Update(/home/chaoyu/backend/app/main.py)
+  ⎿  Added 3 lines, removed 1 line
+      262  
+      263  class _SensitiveContentMiddleware(BaseHTTPMiddleware):
+      264      async def dispatch(self, request: Request, call_next):
+      265 -        if request.method in ("POST", "PUT") and request.url.p
+          -ath.startswith(("/api/v1/chat", "/api/v1/auth")):             
+      265 +        # Chat endpoints should NOT be filtered — legal questi
+          +ons naturally                                                 
+      266 +        # contain terms like 诈骗, 赌博, 高利贷, etc. Only pro
+          +tect auth.                                                    
+      267 +        if request.method in ("POST", "PUT") and request.url.p
+          +ath.startswith("/api/v1/auth"):                               
+      268              body = await request.body()
+      269              if body and _check_sensitive(body.decode("utf-8", 
+           errors="ignore")):
+      270                  return JSONResponse(
+
+● Update(src/pages/chat/ChatPage.tsx)
+  ⎿  Error editing file
+
+● Bash(sed -n '238p' /home/chaoyu/frontend/src/pages/chat/ChatPage.tsx | cat -A)
+  ⎿        if (!response.ok) throw new Error("Stream request failed");$
+
+● Update(src/pages/chat/ChatPage.tsx)
+  ⎿  Added 6 lines, removed 1 line
+      235          signal: abortRef.current.signal,
+      236        });
+      237  
+      238 -      if (!response.ok) throw new Error("Stream request failed
+          -");                                                           
+      238 +      if (!response.ok) {                                     
+      239 +        const body = await response.text().catch(() => "");   
+      240 +        let detail = "Stream request failed";                 
+      241 +        try { const j = JSON.parse(body); if (j.message) detai
+          +l = j.message; } catch { if (body) detail = body; }           
+      242 +        throw new Error(detail);                              
+      243 +      }                                                       
+      244  
+      245        const reader = response.body!.getReader();
+      246        const decoder = new TextDecoder();
+
+● 两个文件都已修改。后端会自动热重载（--reload）。前端需要重新构建 Docker 镜像。
+
+● Bash(curl -s -X POST http://localhost:8888/api/v1/chat/stream \
+        -H "Content-Type: application/json" \…)
+  ⎿  401
+
+● 后端已生效（返回 401 而非 400，因为是无效
+  token，说明敏感词中间件不再拦截法律咨询请求）。
+
+  你需要重建前端 Docker 来更新错误提示：
+
+  docker compose build --no-cache frontend && docker compose up -d
+  --force-recreate frontend
+
+  总结改动：
+
+  1. backend/app/main.py — 敏感内容中间件跳过 /api/v1/chat 路径，只保护
+  /api/v1/auth。法律咨询中的"诈骗、赌博、高利贷"等词不再被拦截。
+  2. frontend/src/pages/chat/ChatPage.tsx —
+  当请求失败时，读取服务端返回的真实错误信息显示给用户，而不是笼统的"Stream
+  request failed"。
+
+✻ Brewed for 6m 22s
